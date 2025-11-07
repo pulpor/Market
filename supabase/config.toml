@@ -1,0 +1,4 @@
+project_id = "ayoyshpghrejrjjqypfv"
+
+[functions.calculate-assets]
+verify_jwt = false

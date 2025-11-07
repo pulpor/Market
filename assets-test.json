@@ -1,0 +1,30 @@
+{
+  "assets": [
+    {
+      "id": "1730000000001",
+      "ticker": "PETR4",
+      "quantidade": 100,
+      "preco_medio": 28.50,
+      "setor": "Petróleo e Gás",
+      "corretora": "XP"
+    },
+    {
+      "id": "1730000000002",
+      "ticker": "VALE3",
+      "quantidade": 50,
+      "preco_medio": 62.00,
+      "setor": "Mineração",
+      "corretora": "Nubank"
+    },
+    {
+      "id": "1730000000003",
+      "ticker": "ITUB4",
+      "quantidade": 200,
+      "preco_medio": 35.20,
+      "setor": "Bancos",
+      "corretora": "Itaú"
+    }
+  ],
+  "lastUpdated": "2025-11-07T19:30:00.000Z",
+  "version": "1.0"
+}
