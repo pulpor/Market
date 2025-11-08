@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,9 +26,9 @@ interface YahooQuoteResponse {
   };
 }
 
-// Cache simples em memória com TTL de 15 minutos
+// Cache simples em memória com TTL de 5 minutos
 const cache = new Map<string, { preco_atual: number; dividend_yield: number; timestamp: number }>();
-const CACHE_TTL = 15 * 60 * 1000; // 15 minutos
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutos (dados reais devem ser atualizados frequentemente)
 
 function normalizeTicker(ticker: string): string {
   const upperTicker = ticker.toUpperCase().trim();
@@ -37,79 +37,48 @@ function normalizeTicker(ticker: string): string {
 
 async function getYahooData(ticker: string): Promise<{ preco_atual: number; dividend_yield: number }> {
   const normalizedTicker = normalizeTicker(ticker);
-  
-  // Verifica cache
+
+  // Cache curto para evitar excesso de chamadas (preço + DY TTM)
   const cached = cache.get(normalizedTicker);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log(`Cache hit para ${normalizedTicker}`);
     return { preco_atual: cached.preco_atual, dividend_yield: cached.dividend_yield };
   }
 
-  console.log(`Buscando cotação real para ${normalizedTicker}`);
+  // Usa somente o endpoint de chart com events=div (quoteSummary vem 401 para dividendos)
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${normalizedTicker}?interval=1d&range=2y&events=div`;
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+  });
+  if (!resp.ok) throw new Error(`Falha ao buscar chart ${resp.status} para ${normalizedTicker}`);
 
-  try {
-    // Busca preço atual
-    const priceResponse = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${normalizedTicker}?interval=1d&range=1d`,
-      {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      }
-    );
+  const data = await resp.json();
+  const chart = data?.chart?.result?.[0];
+  if (!chart) throw new Error(`Chart vazio para ${normalizedTicker}`);
 
-    if (!priceResponse.ok) {
-      throw new Error(`Yahoo Finance API retornou ${priceResponse.status} para ${normalizedTicker}`);
-    }
-
-    const priceData: YahooQuoteResponse = await priceResponse.json();
-    
-    if (priceData.chart.error) {
-      throw new Error(`Yahoo Finance error: ${priceData.chart.error.description}`);
-    }
-
-    const preco_atual = priceData.chart.result[0]?.meta?.regularMarketPrice;
-
-    if (!preco_atual) {
-      throw new Error(`Preço não encontrado para ${normalizedTicker}`);
-    }
-
-    // Busca dividend yield
-    let dividend_yield = 0;
-    try {
-      const statsResponse = await fetch(
-        `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${normalizedTicker}?modules=summaryDetail`,
-        {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        }
-      );
-
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json();
-        const trailingYield = statsData.quoteSummary?.result?.[0]?.summaryDetail?.trailingAnnualDividendYield?.raw;
-        if (trailingYield) {
-          dividend_yield = trailingYield * 100; // Converte para porcentagem
-        }
-      }
-    } catch (error) {
-      console.warn(`Não foi possível obter dividend yield para ${normalizedTicker}:`, error);
-      // Continua sem o dividend yield
-    }
-
-    // Armazena no cache
-    const result = { preco_atual, dividend_yield };
-    cache.set(normalizedTicker, { ...result, timestamp: Date.now() });
-
-    return result;
-  } catch (error) {
-    console.error(`Erro ao buscar dados para ${normalizedTicker}:`, error);
-    throw error;
+  const preco_atual = chart?.meta?.regularMarketPrice;
+  if (typeof preco_atual !== 'number' || preco_atual <= 0) {
+    throw new Error(`Preço inválido para ${normalizedTicker}`);
   }
+
+  // Soma dividendos dos últimos 12 meses (TTM) a partir dos eventos de dividends
+  const events = chart?.events?.dividends ?? {};
+  const oneYearAgo = Date.now() - 365 * 24 * 60 * 60 * 1000;
+  let sumTTM = 0;
+  for (const key in events) {
+    const evt = events[key];
+    const tsMs = (evt?.date ?? 0) * 1000;
+    if (tsMs >= oneYearAgo && typeof evt?.amount === 'number' && evt.amount > 0) {
+      sumTTM += evt.amount; // valor por ação
+    }
+  }
+  const dividend_yield = sumTTM > 0 ? (sumTTM / preco_atual) * 100 : 0;
+
+  const result = { preco_atual, dividend_yield: Number(dividend_yield.toFixed(2)) };
+  cache.set(normalizedTicker, { ...result, timestamp: Date.now() });
+  return result;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

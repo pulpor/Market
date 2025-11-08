@@ -1,6 +1,7 @@
 import { CalculatedAsset } from "@/types/asset";
 import { TrendingUp, TrendingDown, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/hooks/use-toast";
 
 interface AssetCardProps {
   asset: CalculatedAsset;
@@ -23,13 +24,37 @@ export function AssetCard({ asset, onRemove }: AssetCardProps) {
   const isPositive = asset.variacao_percentual >= 0;
   const gradientClass = getGradientClass(asset.corretora);
 
+    const handleDelete = () => {
+      if (!onRemove) return;
+    
+      toast({
+        title: "Confirmar exclusão",
+        description: `Deseja realmente remover ${asset.ticker_normalizado.replace(".SA", "")} da carteira?`,
+        action: (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              onRemove(asset.id);
+              toast({
+                title: "Ativo removido",
+                description: `${asset.ticker_normalizado.replace(".SA", "")} foi removido da carteira`,
+              });
+            }}
+          >
+            Confirmar
+          </Button>
+        ),
+      });
+    };
+
   return (
     <div className={`${gradientClass} rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative`}>
       {onRemove && (
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => onRemove(asset.id)}
+            onClick={handleDelete}
           className="absolute top-2 right-2 h-8 w-8 text-white/70 hover:text-white hover:bg-white/20"
           title="Remover ativo"
         >

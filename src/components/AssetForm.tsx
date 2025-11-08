@@ -4,25 +4,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Asset, Corretora } from "@/types/asset";
-import { Plus } from "lucide-react";
+import { Calculator } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 interface AssetFormProps {
-  onAddAsset: (asset: Asset) => void;
+  onAddAndCalculate: (asset: Asset) => void;
+  isCalculating: boolean;
 }
 
 const corretoras: Corretora[] = ["Nubank", "XP", "Itaú", "Santander", "BTG", "Outros"];
 
-export function AssetForm({ onAddAsset }: AssetFormProps) {
+export function AssetForm({ onAddAndCalculate, isCalculating }: AssetFormProps) {
   const [ticker, setTicker] = useState("");
   const [quantidade, setQuantidade] = useState("");
   const [precoMedio, setPrecoMedio] = useState("");
   const [setor, setSetor] = useState("");
   const [corretora, setCorretora] = useState<Corretora>("Nubank");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleCalculate = () => {
     if (!ticker || !quantidade || !precoMedio) {
       toast({
         title: "Campos obrigatórios",
@@ -53,7 +52,8 @@ export function AssetForm({ onAddAsset }: AssetFormProps) {
       corretora,
     };
 
-    onAddAsset(newAsset);
+  // Adiciona e calcula com a lista mesclada atual
+  onAddAndCalculate(newAsset);
 
     // Limpa o formulário
     setTicker("");
@@ -61,14 +61,11 @@ export function AssetForm({ onAddAsset }: AssetFormProps) {
     setPrecoMedio("");
     setSetor("");
 
-    toast({
-      title: "Ativo adicionado",
-      description: `${newAsset.ticker} foi adicionado à carteira`,
-    });
+    // Cálculo será disparado no container (Index) junto com a adição
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 bg-card p-6 rounded-xl border border-border">
+    <div className="space-y-4 bg-card p-6 rounded-xl border border-border">
       <h2 className="text-xl font-bold text-foreground">Adicionar Ativo</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -136,10 +133,14 @@ export function AssetForm({ onAddAsset }: AssetFormProps) {
         </div>
       </div>
 
-      <Button type="submit" className="w-full">
-        <Plus className="mr-2 h-4 w-4" />
-        Adicionar Ativo
+      <Button 
+        onClick={handleCalculate} 
+        disabled={isCalculating}
+        className="w-full"
+      >
+        <Calculator className="mr-2 h-4 w-4" />
+        {isCalculating ? "Calculando..." : "Calcular via Yahoo Finance"}
       </Button>
-    </form>
+    </div>
   );
 }

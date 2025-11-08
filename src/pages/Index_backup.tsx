@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Asset, CalculatedAsset, PortfolioSummary } from "@/types/asset";
 import { AssetForm } from "@/components/AssetForm";
+import { AssetList } from "@/components/AssetList";
 import { AssetCard } from "@/components/AssetCard";
 import { Charts } from "@/components/Charts";
+import { Button } from "@/components/ui/button";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
-import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp } from "lucide-react";
+import { Calculator, TrendingUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
@@ -14,12 +15,15 @@ const Index = () => {
   const [calculatedAssets, setCalculatedAssets] = useState<CalculatedAsset[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Carrega os ativos do arquivo ao montar o componente
   useEffect(() => {
     const loadInitialAssets = async () => {
+      setIsLoading(true);
       const loadedAssets = await loadAssets();
       setAssets(loadedAssets);
+      setIsLoading(false);
 
       if (loadedAssets.length > 0) {
         toast({
@@ -34,38 +38,18 @@ const Index = () => {
     loadInitialAssets();
   }, []);
 
-  // Adiciona o ativo e já calcula usando a lista mesclada atualizada
-  const handleAddAndCalculate = (asset: Asset) => {
-    setAssets((prev) => {
-      const updated = [...prev, asset];
-      const merged = mergeAssetsByTicker(updated);
-
-      if (merged.length < updated.length) {
-        toast({
-          title: "Posições mescladas",
-          description: `${asset.ticker.toUpperCase()} na corretora ${asset.corretora} teve posição combinada (quantidade e preço médio recalculados).`,
-        });
-      }
-
-      calculateAndPersist(merged, true).then(() => {
-        toast({
-          title: "Cálculo concluído",
-          description: `${asset.ticker.toUpperCase()} adicionado e carteira recalculada`,
-        });
-      });
-
-      return merged;
-    });
+  const handleAddAsset = (asset: Asset) => {
+    setAssets((prev) => [...prev, asset]);
   };
 
-  const handleRemoveAsset = async (id: string) => {
-    const updatedAssets = assets.filter((a) => a.id !== id);
-    setAssets(updatedAssets);
-    setCalculatedAssets((prev) => prev.filter((a) => a.id !== id));
+    const handleRemoveAsset = async (id: string) => {
+      const updatedAssets = assets.filter((a) => a.id !== id);
+      setAssets(updatedAssets);
+      setCalculatedAssets((prev) => prev.filter((a) => a.id !== id));
     
-    // Salva automaticamente após remover
-    await saveAssets(updatedAssets);
-  };
+      // Salva automaticamente após remover
+      await saveAssets(updatedAssets);
+    };
 
   // Função reutilizável para calcular e persistir
   const calculateAndPersist = async (assetsToUse: Asset[], silent = false) => {
@@ -103,7 +87,6 @@ const Index = () => {
   };
 
   const handleCalculate = async () => {
-    // Cálculo manual (não usado pelo fluxo principal agora, mas mantido se quiser recalcular sem adicionar)
     await calculateAndPersist(assets);
   };
 
@@ -120,10 +103,26 @@ const Index = () => {
         </header>
 
         {/* Formulário */}
-        <AssetForm 
-          onAddAndCalculate={handleAddAndCalculate}
-          isCalculating={isCalculating}
-        />
+        <AssetForm onAddAsset={handleAddAsset} />
+
+        {/* Lista de Ativos */}
+        {isLoading ? (
+          <div className="bg-card p-6 rounded-xl border border-border text-center">
+            <p className="text-muted-foreground">Carregando carteira...</p>
+          </div>
+        ) : (
+          <AssetList assets={assets} onRemoveAsset={handleRemoveAsset} />
+        )}
+
+        {/* Botões de Ação */}
+        {assets.length > 0 && (
+            <div className="flex justify-center">
+            <Button onClick={handleCalculate} disabled={isCalculating} size="lg" className="text-lg px-8">
+              <Calculator className="mr-2 h-5 w-5" />
+              {isCalculating ? "Calculando..." : "Calcular via Yahoo Finance"}
+            </Button>
+          </div>
+        )}
 
         {/* Resumo da Carteira */}
         {summary && (
@@ -159,7 +158,7 @@ const Index = () => {
             <h2 className="text-2xl font-bold text-foreground mb-4">Meus Ativos</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {calculatedAssets.map((asset) => (
-                <AssetCard key={asset.id} asset={asset} onRemove={handleRemoveAsset} />
+                  <AssetCard key={asset.id} asset={asset} onRemove={handleRemoveAsset} />
               ))}
             </div>
           </div>
