@@ -49,13 +49,13 @@ export function AssetCard({ asset, onRemove }: AssetCardProps) {
     };
 
   return (
-    <div className={`${gradientClass} rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative`}>
+    <div className={`${gradientClass} rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative group`}>
       {onRemove && (
         <Button
           variant="ghost"
           size="icon"
-            onClick={handleDelete}
-          className="absolute top-2 right-2 h-8 w-8 text-white/70 hover:text-white hover:bg-white/20"
+          onClick={handleDelete}
+          className="absolute top-2 right-2 h-8 w-8 rounded-full bg-white/0 text-white/60 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:bg-white/20 hover:bg-white/20 hover:text-white transition-all shadow-sm backdrop-blur-sm border border-white/10"
           title="Remover ativo"
         >
           <Trash2 className="h-4 w-4" />

@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Asset, CalculatedAsset, PortfolioSummary } from "@/types/asset";
+import { useState, useEffect, useMemo } from "react";
+import { Asset, CalculatedAsset, PortfolioSummary, Corretora } from "@/types/asset";
 import { AssetForm } from "@/components/AssetForm";
 import { AssetCard } from "@/components/AssetCard";
 import { Charts } from "@/components/Charts";
@@ -8,12 +8,21 @@ import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
 import { TrendingUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
 
 const Index = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [calculatedAssets, setCalculatedAssets] = useState<CalculatedAsset[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  // Filtros e ordenação
+  const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
+  const [sortKey, setSortKey] = useState<
+    "valor_total" | "dividend_yield" | "quantidade" | "preco_atual" | "variacao_percentual" | "pl_posicao"
+  >("valor_total");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
 
   // Carrega os ativos do arquivo ao montar o componente
   useEffect(() => {
@@ -107,6 +116,22 @@ const Index = () => {
     await calculateAndPersist(assets);
   };
 
+  // Ativos após filtros/ordenação
+  const displayedAssets = useMemo(() => {
+    const filtered = brokerFilter === "Todas"
+      ? calculatedAssets
+      : calculatedAssets.filter(a => a.corretora === brokerFilter);
+
+    const sorted = [...filtered].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      const comp = (typeof av === "number" && typeof bv === "number") ? av - bv : 0;
+      return sortDir === "asc" ? comp : -comp;
+    });
+
+    return sorted;
+  }, [calculatedAssets, brokerFilter, sortKey, sortDir]);
+
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -156,9 +181,72 @@ const Index = () => {
         {/* Cards dos Ativos Calculados */}
         {calculatedAssets.length > 0 && (
           <div>
-            <h2 className="text-2xl font-bold text-foreground mb-4">Meus Ativos</h2>
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-4">
+              <h2 className="text-2xl font-bold text-foreground">Meus Ativos</h2>
+
+              {/* Barra de filtros/ordenação */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full md:w-auto">
+                {/* Filtrar Corretora */}
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground flex items-center gap-1"><Filter className="h-4 w-4" /> Corretora</div>
+                  <Select value={brokerFilter} onValueChange={(v) => setBrokerFilter(v as any)}>
+                    <SelectTrigger className="min-w-[180px]"><SelectValue placeholder="Todas" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Todas">Todas</SelectItem>
+                      <SelectItem value="Nubank">Nubank</SelectItem>
+                      <SelectItem value="XP">XP</SelectItem>
+                      <SelectItem value="Itaú">Itaú</SelectItem>
+                      <SelectItem value="Santander">Santander</SelectItem>
+                      <SelectItem value="BTG">BTG</SelectItem>
+                      <SelectItem value="Outros">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Ordenar por */}
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Ordenar por</div>
+                  <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
+                    <SelectTrigger className="min-w-[200px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="valor_total">Maior valor</SelectItem>
+                      <SelectItem value="dividend_yield">Maior DY</SelectItem>
+                      <SelectItem value="quantidade">Maior quantidade</SelectItem>
+                      <SelectItem value="preco_atual">Maior preço atual</SelectItem>
+                      <SelectItem value="variacao_percentual">Maior variação %</SelectItem>
+                      <SelectItem value="pl_posicao">Maior P/L posição</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Direção */}
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Direção</div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={sortDir === "desc" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSortDir("desc")}
+                      title="Maior para menor"
+                    >
+                      <ArrowDownWideNarrow className="h-4 w-4 mr-1" /> Desc
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={sortDir === "asc" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSortDir("asc")}
+                      title="Menor para maior"
+                    >
+                      <ArrowUpWideNarrow className="h-4 w-4 mr-1" /> Asc
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {calculatedAssets.map((asset) => (
+              {displayedAssets.map((asset) => (
                 <AssetCard key={asset.id} asset={asset} onRemove={handleRemoveAsset} />
               ))}
             </div>

@@ -48,7 +48,9 @@ export function AssetList({ assets, onRemoveAsset }: AssetListProps) {
               variant="ghost"
               size="icon"
               onClick={() => handleRemove(asset.id, asset.ticker)}
-              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              className="rounded-full h-8 w-8 text-destructive/80 hover:text-destructive bg-transparent hover:bg-destructive/10 transition-colors"
+              aria-label={`Remover ${asset.ticker}`}
+              title={`Remover ${asset.ticker}`}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
