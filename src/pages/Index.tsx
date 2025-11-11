@@ -6,12 +6,13 @@ import { Charts } from "@/components/Charts";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp, LogOut } from "lucide-react";
+import { TrendingUp, LogOut, Building2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Index = () => {
   const { user, signOut } = useAuth();
@@ -19,6 +20,10 @@ const Index = () => {
   const [calculatedAssets, setCalculatedAssets] = useState<CalculatedAsset[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<CalculatedAsset | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9;
+  
   // Filtros e ordenação
   const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
   const [sortKey, setSortKey] = useState<
@@ -45,10 +50,12 @@ const Index = () => {
     loadInitialAssets();
   }, []);
 
-  // Adiciona o ativo e já calcula usando a lista mesclada atualizada
+  // Adiciona ou atualiza o ativo e já calcula usando a lista mesclada atualizada
   const handleAddAndCalculate = (asset: Asset) => {
     setAssets((prev) => {
-      const updated = [...prev, asset];
+      // Se estiver editando, remove o antigo antes de adicionar o novo
+      const filtered = editingAsset ? prev.filter(a => a.id !== editingAsset.id) : prev;
+      const updated = [...filtered, asset];
       const merged = mergeAssetsByTicker(updated);
 
       if (merged.length < updated.length) {
@@ -60,9 +67,12 @@ const Index = () => {
 
       calculateAndPersist(merged, true).then(() => {
         toast({
-          title: "Cálculo concluído",
-          description: `${asset.ticker.toUpperCase()} adicionado e carteira recalculada`,
+          title: editingAsset ? "Ativo atualizado" : "Cálculo concluído",
+          description: editingAsset 
+            ? `${asset.ticker.toUpperCase()} foi atualizado com sucesso`
+            : `${asset.ticker.toUpperCase()} adicionado e carteira recalculada`,
         });
+        setEditingAsset(null); // Limpa o modo de edição
       });
 
       return merged;
@@ -76,6 +86,16 @@ const Index = () => {
     
     // Salva automaticamente após remover
     await saveAssets(updatedAssets);
+  };
+
+  const handleEditAsset = (asset: CalculatedAsset) => {
+    setEditingAsset(asset);
+    // Scroll suave para o formulário
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast({
+      title: "Modo de edição",
+      description: `Edite ${asset.ticker_normalizado.replace(".SA", "")} e clique em Adicionar para atualizar`,
+    });
   };
 
   // Função reutilizável para calcular e persistir
@@ -171,33 +191,184 @@ const Index = () => {
         <AssetForm 
           onAddAndCalculate={handleAddAndCalculate}
           isCalculating={isCalculating}
+          editingAsset={editingAsset}
+          onCancelEdit={() => setEditingAsset(null)}
         />
 
         {/* Resumo da Carteira */}
         {summary && (
           <div className="bg-card p-6 rounded-xl border border-border">
-            <h2 className="text-2xl font-bold text-foreground mb-4">Resumo da Carteira</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <p className="text-muted-foreground text-sm mb-1">Valor Total</p>
-                <p className="text-3xl font-bold text-foreground">R$ {summary.valor_total_carteira.toFixed(2)}</p>
+            <Tabs defaultValue="total" className="w-full">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-foreground">Resumo da Carteira</h2>
+                <TabsList className="grid grid-cols-2 w-auto">
+                  <TabsTrigger value="total">Total</TabsTrigger>
+                  <TabsTrigger value="corretora">
+                    <Building2 className="h-4 w-4 mr-2" />
+                    Por Corretora
+                  </TabsTrigger>
+                </TabsList>
               </div>
-              <div>
-                <p className="text-muted-foreground text-sm mb-1">DY Médio Ponderado</p>
-                <p className="text-3xl font-bold text-success">{summary.dy_ponderado.toFixed(2)}%</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground text-sm mb-1">P/L Total</p>
-                <p
-                  className={`text-3xl font-bold ${
-                    summary.pl_total >= 0 ? "text-success" : "text-destructive"
-                  }`}
-                >
-                  R$ {summary.pl_total >= 0 ? "+" : ""}
-                  {summary.pl_total.toFixed(2)}
-                </p>
-              </div>
-            </div>
+
+              <TabsContent value="total">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                  <div>
+                    <p className="text-muted-foreground text-sm mb-1">Valor Total</p>
+                    <p className="text-3xl font-bold text-foreground">
+                      R$ {summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-sm mb-1">DY Médio Ponderado</p>
+                    <p className="text-3xl font-bold text-success">
+                      {summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-sm mb-1">Crescimento Médio</p>
+                    <p
+                      className={`text-3xl font-bold ${
+                        calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0 
+                          ? "text-success" 
+                          : "text-destructive"
+                      }`}
+                    >
+                      {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0 ? "+" : "")}
+                      {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-sm mb-1">P/L Total</p>
+                    <p
+                      className={`text-3xl font-bold ${
+                        summary.pl_total >= 0 ? "text-success" : "text-destructive"
+                      }`}
+                    >
+                      R$ {summary.pl_total >= 0 ? "+" : ""}
+                      {summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Previsão de Dividendos */}
+                <div className="border-t border-border pt-6 mt-6">
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-success" />
+                    Previsão de Dividendos
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-success/5 p-4 rounded-lg border border-success/20">
+                      <p className="text-muted-foreground text-sm mb-1">Projeção Anual</p>
+                      <p className="text-2xl font-bold text-success">
+                        R$ {calculatedAssets.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Baseado no DY atual × Valor investido
+                      </p>
+                    </div>
+                    <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
+                      <p className="text-muted-foreground text-sm mb-1">Projeção Mensal (média)</p>
+                      <p className="text-2xl font-bold text-primary">
+                        R$ {(calculatedAssets.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Projeção anual ÷ 12 meses
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="corretora">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                  {Array.from(new Set(calculatedAssets.map(a => a.corretora))).map(corretora => {
+                    const assetsCorretora = calculatedAssets.filter(a => a.corretora === corretora);
+                    const valorTotal = assetsCorretora.reduce((sum, a) => sum + a.valor_total, 0);
+                    const dyPonderado = assetsCorretora.reduce((sum, a) => {
+                      const participacao = a.valor_total / valorTotal;
+                      return sum + a.dividend_yield * participacao;
+                    }, 0);
+                    const crescimentoMedio = assetsCorretora.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsCorretora.length;
+                    const plTotal = assetsCorretora.reduce((sum, a) => sum + a.pl_posicao, 0);
+                    
+                    return (
+                      <div key={corretora} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
+                        <div className="flex items-center gap-2 mb-4">
+                          <Building2 className="h-5 w-5 text-primary" />
+                          <h4 className="font-bold text-lg text-foreground">{corretora}</h4>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Valor Total</p>
+                            <p className="text-xl font-bold text-foreground">
+                              R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <p className="text-xs text-muted-foreground">DY Médio</p>
+                              <p className="text-sm font-semibold text-success">
+                                {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Crescim.</p>
+                              <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">P/L</p>
+                              <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Previsão de Dividendos por Corretora */}
+                <div className="border-t border-border pt-6 mt-6">
+                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-success" />
+                    Previsão de Dividendos
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Array.from(new Set(calculatedAssets.map(a => a.corretora))).map(corretora => {
+                      const assetsCorretora = calculatedAssets.filter(a => a.corretora === corretora);
+                      const projecaoAnual = assetsCorretora.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
+                      const projecaoMensal = projecaoAnual / 12;
+                      
+                      return (
+                        <div key={corretora} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <h4 className="font-semibold text-foreground">{corretora}</h4>
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Anual</p>
+                              <p className="text-lg font-bold text-success">
+                                R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Mensal</p>
+                              <p className="text-sm font-semibold text-primary">
+                                R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
         )}
 
@@ -269,10 +440,55 @@ const Index = () => {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {displayedAssets.map((asset) => (
-                <AssetCard key={asset.id} asset={asset} onRemove={handleRemoveAsset} />
-              ))}
+              {displayedAssets
+                .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                .map((asset) => (
+                  <AssetCard 
+                    key={asset.id} 
+                    asset={asset} 
+                    onRemove={handleRemoveAsset}
+                    onEdit={handleEditAsset}
+                  />
+                ))
+              }
             </div>
+
+            {/* Paginação */}
+            {displayedAssets.length > itemsPerPage && (
+              <div className="flex items-center justify-center gap-2 mt-8">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Anterior
+                </Button>
+                
+                <div className="flex gap-1">
+                  {Array.from({ length: Math.ceil(displayedAssets.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCurrentPage(page)}
+                      className="min-w-[40px]"
+                    >
+                      {page}
+                    </Button>
+                  ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedAssets.length / itemsPerPage), p + 1))}
+                  disabled={currentPage === Math.ceil(displayedAssets.length / itemsPerPage)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            )}
           </div>
         )}
 

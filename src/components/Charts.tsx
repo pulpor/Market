@@ -43,6 +43,21 @@ const gradientFills = [
 
 export function Charts({ assets }: ChartsProps) {
   const LABEL_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\"";
+
+  // Fallback local para classificar tipo de ativo quando não vier do backend (ex.: mock)
+  const inferTipoAtivo = (rawTicker: string, setor?: string): string => {
+    const t = (rawTicker || '').toUpperCase().replace('.SA', '').trim();
+    const etfPrefixes = ['BOVA', 'SMAL', 'IVVB', 'SPXI', 'PIBB', 'BRAX', 'FIND', 'MATB', 'DIVO', 'HASH', 'ISUS', 'WRLD', 'NDIV', 'BOVV', 'ECOO', 'XFIX', 'B5P2'];
+    if (etfPrefixes.some(prefix => t.startsWith(prefix))) return 'ETF';
+    const setorLower = (setor || '').toLowerCase();
+    const isImobiliario = setorLower.includes('imobili') || setorLower.includes('real');
+    const nonFiiUnits = new Set(['TAEE11','SANB11','SAPR11','KLBN11','ALUP11','STBP11','ITUB11','BBDC11']);
+    if (isImobiliario) return 'FII';
+    if (t.endsWith('11') && !nonFiiUnits.has(t)) return 'FII';
+    if (t.endsWith('11')) return 'Ação';
+    if (/[3-9]$/.test(t)) return 'Ação';
+    return 'Outro';
+  };
   // Dados para pizza de alocação por ticker
   const tickerData = assets.map((asset, i) => ({
     name: asset.ticker_normalizado.replace(".SA", ""),
@@ -63,12 +78,36 @@ export function Charts({ assets }: ChartsProps) {
     color: COLORS[corretora],
   }));
 
-  // Dados para gráfico de barras DY
-  const dyData = assets
-    .map((asset) => ({
-      ticker: asset.ticker_normalizado.replace(".SA", ""),
-      dy: asset.dividend_yield,
-      color: COLORS[asset.corretora],
+  // Dados para gráfico de barras DY - agrupa por ticker (soma se tiver em várias corretoras)
+  const dyMap = new Map<string, { ticker: string; dy: number; valor_total: number }>();
+  
+  assets.forEach((asset) => {
+    const ticker = asset.ticker_normalizado.replace(".SA", "");
+    const existing = dyMap.get(ticker);
+    
+    if (existing) {
+      // Se já existe, faz média ponderada do DY pelo valor total
+      const totalValor = existing.valor_total + asset.valor_total;
+      const dyPonderado = (existing.dy * existing.valor_total + asset.dividend_yield * asset.valor_total) / totalValor;
+      dyMap.set(ticker, {
+        ticker,
+        dy: dyPonderado,
+        valor_total: totalValor,
+      });
+    } else {
+      dyMap.set(ticker, {
+        ticker,
+        dy: asset.dividend_yield,
+        valor_total: asset.valor_total,
+      });
+    }
+  });
+
+  const dyData = Array.from(dyMap.values())
+    .map((data, i) => ({
+      ticker: data.ticker,
+      dy: data.dy,
+      color: TICKER_PALETTE[i % TICKER_PALETTE.length],
     }))
     .sort((a, b) => b.dy - a.dy);
 
@@ -88,6 +127,47 @@ export function Charts({ assets }: ChartsProps) {
 
   const tickerLegend = buildLegend(tickerData);
   const corretoraLegend = buildLegend(corretoraData);
+
+  // Dados para pizza de alocação por tipo de ativo (Ação, FII, ETF)
+  const tipoAtivoMap = new Map<string, number>();
+  assets.forEach((asset) => {
+    const tipo = asset.tipo_ativo || inferTipoAtivo(asset.ticker_normalizado, asset.setor);
+    const current = tipoAtivoMap.get(tipo) || 0;
+    tipoAtivoMap.set(tipo, current + asset.valor_total);
+  });
+
+  const tipoAtivoColors: Record<string, string> = {
+    'Ação': '#3B82F6',
+    'FII': '#10B981',
+    'ETF': '#F59E0B',
+    'Outro': '#7E8895',
+  };
+
+  const tipoAtivoData = Array.from(tipoAtivoMap.entries()).map(([tipo, value]) => ({
+    name: tipo,
+    value,
+    color: tipoAtivoColors[tipo] || tipoAtivoColors['Outro'],
+  }));
+
+  const tipoAtivoLegend = buildLegend(tipoAtivoData);
+
+  // Dados para pizza de alocação por setor
+  // Se for FII, contabiliza no grupo "FII" para melhor distinção visual
+  const setorMap = new Map<string, number>();
+  assets.forEach((asset) => {
+    const tipo = asset.tipo_ativo || inferTipoAtivo(asset.ticker_normalizado, asset.setor);
+    const setorLabel = tipo === 'FII' ? 'FII' : (asset.setor || 'Outros');
+    const current = setorMap.get(setorLabel) || 0;
+    setorMap.set(setorLabel, current + asset.valor_total);
+  });
+
+  const setorData = Array.from(setorMap.entries()).map(([setor, value], i) => ({
+    name: setor,
+    value,
+    color: TICKER_PALETTE[i % TICKER_PALETTE.length],
+  }));
+
+  const setorLegend = buildLegend(setorData);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -221,20 +301,142 @@ export function Charts({ assets }: ChartsProps) {
         <ResponsiveContainer width="100%" height={340}>
           <BarChart data={dyData}>
             <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--border))" />
-            <XAxis dataKey="ticker" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
-            <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} label={{ value: "DY (%)", angle: -90, position: "insideLeft", style: { fontSize: 12, fill: "hsl(var(--muted-foreground))" } }} />
-            <Tooltip
-              formatter={(value: number) => `${value.toFixed(2)}%`}
-              contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12 }}
+            <XAxis 
+              dataKey="ticker" 
+              stroke="hsl(var(--muted-foreground))" 
+              tick={{ fontSize: 12, fill: "hsl(var(--foreground))", fontWeight: 500 }} 
             />
-            <Bar dataKey="dy" radius={[6, 6, 0, 0]}>
+            <YAxis 
+              stroke="hsl(var(--muted-foreground))" 
+              tick={{ fontSize: 12, fill: "hsl(var(--foreground))" }} 
+              label={{ value: "DY (%)", angle: -90, position: "insideLeft", style: { fontSize: 12, fill: "hsl(var(--muted-foreground))" } }} 
+            />
+            <Tooltip
+              cursor={{ fill: "hsl(var(--accent) / 0.1)" }}
+              formatter={(value: number) => [`${value.toFixed(2)}%`, "Dividend Yield"]}
+              contentStyle={{ 
+                backgroundColor: "hsl(var(--card))", 
+                color: "hsl(var(--foreground))", 
+                border: "1px solid hsl(var(--border))", 
+                borderRadius: 8, 
+                boxShadow: "0 4px 16px rgba(0,0,0,0.25)", 
+                fontSize: 12,
+                fontFamily: LABEL_FONT as any
+              }}
+              itemStyle={{ color: "hsl(var(--foreground))", fontWeight: 500 }}
+              labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600, marginBottom: 4 }}
+            />
+            <Bar dataKey="dy" radius={[8, 8, 0, 0]}>
               {dyData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
-              <LabelList dataKey="dy" position="top" formatter={(v: number) => `${v.toFixed(1)}%`} style={{ fontSize: 11, fontWeight: 500, fill: "hsl(var(--muted-foreground))" }} />
+              <LabelList 
+                dataKey="dy" 
+                position="top" 
+                formatter={(v: number) => `${v.toFixed(1)}%`} 
+                style={{ fontSize: 11, fontWeight: 600, fill: "hsl(var(--foreground))", fontFamily: LABEL_FONT }} 
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Alocação por Tipo de Ativo */}
+      <div className="bg-card p-6 rounded-xl border border-border">
+        <h3 className="text-lg font-bold text-foreground mb-4">Alocação por Tipo de Ativo</h3>
+        <div className="flex flex-col md:flex-row items-center gap-4">
+          <div className="w-full md:flex-1">
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart>
+                <Pie
+                  data={tipoAtivoData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={false}
+                  outerRadius={90}
+                  innerRadius={48}
+                  paddingAngle={2}
+                  blendStroke
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {tipoAtivoData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke="hsl(var(--background))" strokeWidth={2} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => `R$ ${value.toFixed(2)}`}
+                  contentStyle={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12, fontFamily: LABEL_FONT as any }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))" }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="md:w-56 w-full max-h-[280px] overflow-auto pr-1">
+            <ul className="space-y-2">
+              {tipoAtivoLegend.map((item) => (
+                <li key={item.name} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
+                    <span className="truncate text-foreground/80">{item.name}</span>
+                  </div>
+                  <span className="text-muted-foreground tabular-nums">{item.percent.toFixed(1)}%</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Alocação por Setor */}
+      <div className="bg-card p-6 rounded-xl border border-border">
+        <h3 className="text-lg font-bold text-foreground mb-4">Alocação por Setor</h3>
+        <div className="flex flex-col md:flex-row items-center gap-4">
+          <div className="w-full md:flex-1">
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart>
+                <Pie
+                  data={setorData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={false}
+                  outerRadius={90}
+                  innerRadius={48}
+                  paddingAngle={2}
+                  blendStroke
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {setorData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke="hsl(var(--background))" strokeWidth={2} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => `R$ ${value.toFixed(2)}`}
+                  contentStyle={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12, fontFamily: LABEL_FONT as any }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))" }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="md:w-56 w-full max-h-[280px] overflow-auto pr-1">
+            <ul className="space-y-2">
+              {setorLegend.map((item) => (
+                <li key={item.name} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
+                    <span className="truncate text-foreground/80">{item.name}</span>
+                  </div>
+                  <span className="text-muted-foreground tabular-nums">{item.percent.toFixed(1)}%</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   );

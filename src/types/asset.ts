@@ -19,6 +19,7 @@ export interface CalculatedAsset extends Asset {
   peso_carteira: number; // percentual do ativo na carteira total
   yoc: number; // Yield on Cost (DY sobre preço médio)
   projecao_dividendos_anual: number; // projeção anual de dividendos em R$
+  tipo_ativo?: string; // Ação, FII, ETF, Outro
 }
 
 export interface PortfolioSummary {

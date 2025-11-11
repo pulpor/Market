@@ -32,6 +32,16 @@ function normalizeTicker(ticker: string): string {
   return upperTicker.endsWith(".SA") ? upperTicker : `${upperTicker}.SA`;
 }
 
+function getTipoAtivo(ticker: string): string {
+  const upperTicker = ticker.toUpperCase();
+  const cleaned = upperTicker.replace('.SA','');
+  const etfPrefixes = ['BOVA', 'SMAL', 'IVVB', 'SPXI', 'PIBB', 'BRAX', 'FIND', 'MATB', 'DIVO', 'HASH', 'ISUS', 'WRLD', 'NDIV', 'BOVV', 'ECOO', 'XFIX', 'B5P2'];
+  if (etfPrefixes.some(prefix => cleaned.startsWith(prefix))) return 'ETF';
+  if (cleaned.endsWith('11')) return 'FII';
+  if (/[3-9]$/.test(cleaned)) return 'Ação';
+  return 'Outro';
+}
+
 function getCachedData(ticker: string) {
   const cached = cache.get(ticker);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -70,14 +80,20 @@ export async function calculateAssets(assets: Asset[]): Promise<CalculateRespons
   // Simula delay de rede (200-500ms)
   await new Promise((resolve) => setTimeout(resolve, Math.random() * 300 + 200));
 
-  const calculatedAssets: CalculatedAsset[] = assets.map((asset) => {
+  const baseAssets = assets.map((asset) => {
     const ticker_normalizado = normalizeTicker(asset.ticker);
     const yahooData = getYahooData(ticker_normalizado);
+    const tipo_ativo = getTipoAtivo(asset.ticker);
 
     const preco_atual = yahooData.preco_atual;
     const valor_total = preco_atual * asset.quantidade;
     const variacao_percentual = ((preco_atual - asset.preco_medio) / asset.preco_medio) * 100;
     const pl_posicao = (preco_atual - asset.preco_medio) * asset.quantidade;
+    const dividend_yield = yahooData.dividend_yield;
+
+    const dividendos_por_acao = (dividend_yield / 100) * preco_atual;
+    const yoc = (dividendos_por_acao / asset.preco_medio) * 100;
+    const projecao_dividendos_anual = dividendos_por_acao * asset.quantidade;
 
     return {
       ...asset,
@@ -85,10 +101,19 @@ export async function calculateAssets(assets: Asset[]): Promise<CalculateRespons
       preco_atual,
       valor_total,
       variacao_percentual,
-      dividend_yield: yahooData.dividend_yield,
+      dividend_yield,
       pl_posicao,
-    };
+      tipo_ativo,
+      yoc: Number(yoc.toFixed(2)),
+      projecao_dividendos_anual: Number(projecao_dividendos_anual.toFixed(2)),
+    } as Omit<CalculatedAsset, 'peso_carteira'>;
   });
+
+  const totalCarteira = baseAssets.reduce((sum, a) => sum + a.valor_total, 0) || 1;
+  const calculatedAssets: CalculatedAsset[] = baseAssets.map(a => ({
+    ...a,
+    peso_carteira: Number(((a.valor_total / totalCarteira) * 100).toFixed(2)),
+  }));
 
   // Calcula resumo da carteira
   const valor_total_carteira = calculatedAssets.reduce((sum, asset) => sum + asset.valor_total, 0);

@@ -1,5 +1,5 @@
 import { CalculatedAsset } from "@/types/asset";
-import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign } from "lucide-react";
+import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign, Edit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
@@ -8,6 +8,7 @@ import { useState } from "react";
 interface AssetCardProps {
   asset: CalculatedAsset;
   onRemove?: (id: string) => void;
+  onEdit?: (asset: CalculatedAsset) => void;
 }
 
 const getGradientClass = (corretora: string): string => {
@@ -22,7 +23,7 @@ const getGradientClass = (corretora: string): string => {
   return gradients[corretora] || gradients.Outros;
 };
 
-export function AssetCard({ asset, onRemove }: AssetCardProps) {
+export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const isPositive = asset.variacao_percentual >= 0;
   const gradientClass = getGradientClass(asset.corretora);
@@ -53,22 +54,36 @@ export function AssetCard({ asset, onRemove }: AssetCardProps) {
 
   return (
     <div className={`${gradientClass} rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative group`}>
-      {onRemove && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleDelete}
-          className="absolute top-2 right-2 h-8 w-8 rounded-full bg-white/0 text-white/60 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:bg-white/20 hover:bg-white/20 hover:text-white transition-all shadow-sm backdrop-blur-sm border border-white/10"
-          title="Remover ativo"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      )}
+      {/* Botões de ação */}
+      <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {onEdit && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit(asset)}
+            className="h-8 w-8 rounded-full bg-white/0 text-white/60 hover:bg-white/20 hover:text-white focus:bg-white/20 transition-all shadow-sm backdrop-blur-sm border border-white/10"
+            title="Editar ativo"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+        )}
+        {onRemove && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleDelete}
+            className="h-8 w-8 rounded-full bg-white/0 text-white/60 hover:bg-white/20 hover:text-white focus:bg-white/20 transition-all shadow-sm backdrop-blur-sm border border-white/10"
+            title="Remover ativo"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
       
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-2xl font-bold">{asset.ticker_normalizado.replace(".SA", "")}</h3>
-          <p className="text-white/80 text-sm">{asset.setor || asset.corretora}</p>
+          <p className="text-white/80 text-sm">{asset.setor || 'Setor desconhecido'}</p>
         </div>
         <div className="text-right">
           <div className="flex items-center gap-1">
