@@ -6,13 +6,15 @@ import { Charts } from "@/components/Charts";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, LogOut } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
+  const { user, signOut } = useAuth();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [calculatedAssets, setCalculatedAssets] = useState<CalculatedAsset[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
@@ -90,7 +92,17 @@ const Index = () => {
     setIsCalculating(true);
     try {
       const result = await calculateAssets(assetsToUse);
-      setCalculatedAssets(result.ativos);
+      
+      // Enriquece cada ativo com os indicadores adicionais
+      const valorTotalCarteira = result.resumo.valor_total_carteira;
+      const enrichedAssets = result.ativos.map(asset => ({
+        ...asset,
+        peso_carteira: valorTotalCarteira > 0 ? (asset.valor_total / valorTotalCarteira) * 100 : 0,
+        yoc: asset.preco_medio > 0 ? (asset.dividend_yield * asset.preco_atual / asset.preco_medio) : 0,
+        projecao_dividendos_anual: (asset.dividend_yield / 100) * asset.valor_total,
+      }));
+      
+      setCalculatedAssets(enrichedAssets);
       setSummary(result.resumo);
       await saveAssets(assetsToUse);
 
@@ -136,12 +148,23 @@ const Index = () => {
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
-        <header className="text-center space-y-2">
-          <h1 className="text-4xl md:text-5xl font-bold text-foreground flex items-center justify-center gap-3">
-            <TrendingUp className="h-10 w-10 text-primary" />
-            Dashboard B3
-          </h1>
-          <p className="text-muted-foreground text-lg">Acompanhe sua carteira e Dividend Yield em tempo real</p>
+        <header className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl font-bold text-foreground flex items-center justify-center md:justify-start gap-3">
+              <TrendingUp className="h-10 w-10 text-primary" />
+              Dashboard B3
+            </h1>
+            <p className="text-muted-foreground text-lg">Acompanhe sua carteira e Dividend Yield em tempo real</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Logado como</p>
+              <p className="text-sm font-medium truncate max-w-[200px]">{user?.email}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={signOut} title="Sair">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </header>
 
         {/* Formulário */}

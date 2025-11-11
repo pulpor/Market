@@ -1,7 +1,9 @@
 import { CalculatedAsset } from "@/types/asset";
-import { TrendingUp, TrendingDown, Trash2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
+import { useState } from "react";
 
 interface AssetCardProps {
   asset: CalculatedAsset;
@@ -21,6 +23,7 @@ const getGradientClass = (corretora: string): string => {
 };
 
 export function AssetCard({ asset, onRemove }: AssetCardProps) {
+  const [isOpen, setIsOpen] = useState(false);
   const isPositive = asset.variacao_percentual >= 0;
   const gradientClass = getGradientClass(asset.corretora);
 
@@ -119,6 +122,45 @@ export function AssetCard({ asset, onRemove }: AssetCardProps) {
           </div>
         </div>
       </div>
+
+      {/* Toggle para indicadores adicionais */}
+      <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-4">
+        <CollapsibleTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <span className="text-xs">Ver mais detalhes</span>
+            <ChevronDown className={`h-4 w-4 ml-2 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3 space-y-3">
+          <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+            <div className="flex items-center gap-2">
+              <Percent className="h-4 w-4 text-white/60" />
+              <span className="text-sm text-white/80">Peso na Carteira</span>
+            </div>
+            <span className="text-sm font-semibold text-white">{asset.peso_carteira.toFixed(2)}%</span>
+          </div>
+          
+          <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+            <div className="flex items-center gap-2">
+              <TrendingUpIcon className="h-4 w-4 text-white/60" />
+              <span className="text-sm text-white/80">Yield on Cost</span>
+            </div>
+            <span className="text-sm font-semibold text-green-200">{asset.yoc.toFixed(2)}%</span>
+          </div>
+          
+          <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-white/60" />
+              <span className="text-sm text-white/80">Projeção Anual</span>
+            </div>
+            <span className="text-sm font-semibold text-green-200">R$ {asset.projecao_dividendos_anual.toFixed(2)}</span>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
