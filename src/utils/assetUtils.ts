@@ -12,12 +12,21 @@ export function mergeAssetsByTicker(assets: Asset[]): Asset[] {
 
   for (const asset of assets) {
     const normalizedTicker = asset.ticker.toUpperCase().trim();
+
+    // Para renda fixa (tipo_ativo_manual definido) NÃO agregamos posições
+    // Cada lançamento representa um contrato/título separado mesmo que o "ticker" coincida.
+    // Mantemos o objeto como está apenas normalizando ticker.
+    if (asset.tipo_ativo_manual) {
+      keyMap.set(`${normalizedTicker}__${asset.id}`, { ...asset, ticker: normalizedTicker });
+      continue;
+    }
+
     const key = `${normalizedTicker}__${asset.corretora}`; // chave inclui corretora
 
     if (keyMap.has(key)) {
       const existing = keyMap.get(key)!;
 
-      // Calcula preço médio ponderado
+      // Calcula preço médio ponderado para renda variável
       const totalQuantity = existing.quantidade + asset.quantidade;
       const weightedPrice =
         (existing.preco_medio * existing.quantidade + asset.preco_medio * asset.quantidade) /

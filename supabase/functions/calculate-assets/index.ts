@@ -12,6 +12,11 @@ interface Asset {
   preco_medio: number;
   setor?: string;
   corretora: string;
+  tipo_ativo_manual?: string;
+  indice_referencia?: string;
+  taxa_contratada?: number;
+  data_vencimento?: string;
+  valor_atual_rf?: number;
 }
 
 interface YahooQuoteResponse {
@@ -242,6 +247,27 @@ serve(async (req: Request) => {
     // Busca cotações em paralelo
     const promises = ativos.map(async (asset: Asset) => {
       try {
+        // Se tipo manual está definido (Previdência, Tesouro, etc), não busca Yahoo
+        if (asset.tipo_ativo_manual) {
+          const valorAplicado = asset.preco_medio;
+          const valorAtual = asset.valor_atual_rf || valorAplicado;
+          const valor_total = valorAtual;
+          const rentabilidade = ((valorAtual - valorAplicado) / valorAplicado) * 100;
+          
+          return {
+            ...asset,
+            ticker_normalizado: asset.ticker.toUpperCase(),
+            preco_atual: valorAtual,
+            valor_total,
+            variacao_percentual: rentabilidade,
+            dividend_yield: 0, // Renda fixa não tem DY
+            pl_posicao: valorAtual - valorAplicado,
+            setor: asset.tipo_ativo_manual, // Usa tipo como setor
+            tipo_ativo: asset.tipo_ativo_manual,
+          };
+        }
+
+        // Busca via Yahoo para ativos da bolsa
         const ticker_normalizado = normalizeTicker(asset.ticker);
         const yahooData = await getYahooData(asset.ticker);
 

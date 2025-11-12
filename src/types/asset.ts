@@ -7,6 +7,11 @@ export interface Asset {
   preco_medio: number;
   setor?: string;
   corretora: Corretora;
+  tipo_ativo_manual?: string; // Previdência, Tesouro Direto, CDB, etc.
+  indice_referencia?: string; // CDI, IPCA, Selic, etc.
+  taxa_contratada?: number; // Taxa em % a.a.
+  data_vencimento?: string; // Data de vencimento
+  valor_atual_rf?: number; // Valor atual para renda fixa
 }
 
 export interface CalculatedAsset extends Asset {

@@ -1,9 +1,10 @@
 import { CalculatedAsset } from "@/types/asset";
-import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign, Edit } from "lucide-react";
+import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign, Edit, Calendar, Landmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { formatCurrency, formatPercent } from "@/utils/formatters";
 
 interface AssetCardProps {
   asset: CalculatedAsset;
@@ -27,6 +28,19 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const isPositive = asset.variacao_percentual >= 0;
   const gradientClass = getGradientClass(asset.corretora);
+  
+  // Detecta se é Renda Fixa
+  const isRendaFixa = !!asset.tipo_ativo_manual;
+  
+  // Para Renda Fixa, usa valor_atual_rf, senão usa valor_total
+  const valorAtual = isRendaFixa ? (asset.valor_atual_rf || asset.valor_total) : asset.preco_atual;
+  const valorInvestido = asset.preco_medio;
+  const valorTotalAtivo = isRendaFixa ? (asset.valor_atual_rf || asset.valor_total) : asset.valor_total;
+  
+  // Calcula rentabilidade para Renda Fixa
+  const rentabilidade = isRendaFixa && valorInvestido > 0
+    ? ((valorAtual - valorInvestido) / valorInvestido) * 100
+    : asset.variacao_percentual;
 
     const handleDelete = () => {
       if (!onRemove) return;
@@ -83,7 +97,34 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-2xl font-bold">{asset.ticker_normalizado.replace(".SA", "")}</h3>
-          <p className="text-white/80 text-sm">{asset.setor || 'Setor desconhecido'}</p>
+          <p className="text-white/80 text-sm">
+            {isRendaFixa ? (
+              (() => {
+                const indice = asset.indice_referencia || asset.tipo_ativo_manual || '';
+                const taxa = asset.taxa_contratada ?? undefined;
+                // Heurística:
+                // - CDI/Selic com taxa alta (>= 50) tratamos como X% do INDICE
+                // - IPCA/IGP-M com taxa -> INDICE + X%
+                // - Pré-fixado -> X% a.a.
+                if (indice?.toUpperCase().includes('CDI') || indice?.toUpperCase().includes('SELIC')) {
+                  if (typeof taxa === 'number' && taxa > 0) return `${formatPercent(taxa, taxa % 1 === 0 ? 0 : 2)} do ${indice}`;
+                  return indice;
+                }
+                if (indice?.toUpperCase().includes('IPCA') || indice?.toUpperCase().includes('IGP')) {
+                  if (typeof taxa === 'number' && taxa > 0) return `${indice} + ${formatPercent(taxa, 2)}`;
+                  return indice;
+                }
+                if (indice?.toLowerCase().includes('pré')) {
+                  if (typeof taxa === 'number' && taxa > 0) return `${formatPercent(taxa, 2)} a.a.`;
+                  return 'Pré-fixado';
+                }
+                if (taxa && taxa > 0 && indice) return `${indice} + ${formatPercent(taxa, 2)}`;
+                return indice || asset.tipo_ativo_manual || 'Renda Fixa';
+              })()
+            ) : (
+              asset.setor || 'Setor desconhecido'
+            )}
+          </p>
         </div>
         <div className="text-right">
           <div className="flex items-center gap-1">
@@ -93,8 +134,7 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
               <TrendingDown className="h-5 w-5" />
             )}
             <span className={`text-lg font-bold ${isPositive ? "text-green-200" : "text-red-200"}`}>
-              {isPositive ? "+" : ""}
-              {asset.variacao_percentual.toFixed(2)}%
+              {formatPercent(rentabilidade, 2, true)}
             </span>
           </div>
         </div>
@@ -102,37 +142,38 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <p className="text-white/70 text-xs mb-1">Preço Atual</p>
-          <p className="text-xl font-bold">R$ {asset.preco_atual.toFixed(2)}</p>
+          <p className="text-white/70 text-xs mb-1">{isRendaFixa ? 'Valor Atual' : 'Preço Atual'}</p>
+          <p className="text-xl font-bold">{formatCurrency(valorAtual)}</p>
         </div>
         <div>
-          <p className="text-white/70 text-xs mb-1">Preço Médio</p>
-          <p className="text-xl font-bold">R$ {asset.preco_medio.toFixed(2)}</p>
+          <p className="text-white/70 text-xs mb-1">{isRendaFixa ? 'Valor Aplicado' : 'Preço Médio'}</p>
+          <p className="text-xl font-bold">{formatCurrency(valorInvestido)}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <p className="text-white/70 text-xs mb-1">Quantidade</p>
-          <p className="text-lg font-semibold">{asset.quantidade}</p>
+          <p className="text-white/70 text-xs mb-1">{isRendaFixa ? 'Tipo' : 'Quantidade'}</p>
+          <p className="text-lg font-semibold">{isRendaFixa ? asset.tipo_ativo_manual : asset.quantidade}</p>
         </div>
         <div>
           <p className="text-white/70 text-xs mb-1">Valor Total</p>
-          <p className="text-lg font-semibold">R$ {asset.valor_total.toFixed(2)}</p>
+          <p className="text-lg font-semibold">{formatCurrency(valorTotalAtivo)}</p>
         </div>
       </div>
 
       <div className="pt-4 border-t border-white/20">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-white/70 text-xs mb-1">Dividend Yield</p>
-            <p className="text-2xl font-bold text-green-200">{asset.dividend_yield.toFixed(2)}%</p>
+            <p className="text-white/70 text-xs mb-1">{isRendaFixa ? 'Rentabilidade' : 'Dividend Yield'}</p>
+            <p className="text-2xl font-bold text-green-200">
+              {isRendaFixa ? formatPercent(rentabilidade, 2, true) : formatPercent(asset.dividend_yield, 2)}
+            </p>
           </div>
           <div>
             <p className="text-white/70 text-xs mb-1">P/L Posição</p>
             <p className={`text-2xl font-bold ${asset.pl_posicao >= 0 ? "text-green-200" : "text-red-200"}`}>
-              R$ {asset.pl_posicao >= 0 ? "+" : ""}
-              {asset.pl_posicao.toFixed(2)}
+              {formatCurrency(asset.pl_posicao, true)}
             </p>
           </div>
         </div>
@@ -156,24 +197,64 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
               <Percent className="h-4 w-4 text-white/60" />
               <span className="text-sm text-white/80">Peso na Carteira</span>
             </div>
-            <span className="text-sm font-semibold text-white">{asset.peso_carteira.toFixed(2)}%</span>
+            <span className="text-sm font-semibold text-white">{formatPercent(asset.peso_carteira, 2)}</span>
           </div>
           
-          <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
-            <div className="flex items-center gap-2">
-              <TrendingUpIcon className="h-4 w-4 text-white/60" />
-              <span className="text-sm text-white/80">Yield on Cost</span>
-            </div>
-            <span className="text-sm font-semibold text-green-200">{asset.yoc.toFixed(2)}%</span>
-          </div>
+          {!isRendaFixa && (
+            <>
+              <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <TrendingUpIcon className="h-4 w-4 text-white/60" />
+                  <span className="text-sm text-white/80">Yield on Cost</span>
+                </div>
+                <span className="text-sm font-semibold text-green-200">{formatPercent(asset.yoc, 2)}</span>
+              </div>
+              
+              <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-white/60" />
+                  <span className="text-sm text-white/80">Projeção Anual</span>
+                </div>
+                <span className="text-sm font-semibold text-green-200">{formatCurrency(asset.projecao_dividendos_anual)}</span>
+              </div>
+            </>
+          )}
           
-          <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-white/60" />
-              <span className="text-sm text-white/80">Projeção Anual</span>
-            </div>
-            <span className="text-sm font-semibold text-green-200">R$ {asset.projecao_dividendos_anual.toFixed(2)}</span>
-          </div>
+          {isRendaFixa && (
+            <>
+              {asset.indice_referencia && (
+                <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Landmark className="h-4 w-4 text-white/60" />
+                    <span className="text-sm text-white/80">Índice de Referência</span>
+                  </div>
+                  <span className="text-sm font-semibold text-white">{asset.indice_referencia}</span>
+                </div>
+              )}
+              
+              {asset.taxa_contratada && asset.taxa_contratada > 0 && (
+                <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Percent className="h-4 w-4 text-white/60" />
+                    <span className="text-sm text-white/80">Taxa Contratada</span>
+                  </div>
+                  <span className="text-sm font-semibold text-green-200">{formatPercent(asset.taxa_contratada, 2, true)}</span>
+                </div>
+              )}
+              
+              {asset.data_vencimento && (
+                <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-white/60" />
+                    <span className="text-sm text-white/80">Vencimento</span>
+                  </div>
+                  <span className="text-sm font-semibold text-white">
+                    {new Date(asset.data_vencimento).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </CollapsibleContent>
       </Collapsible>
     </div>

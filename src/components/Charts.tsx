@@ -1,6 +1,9 @@
 
 import { CalculatedAsset, Corretora } from "@/types/asset";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from "recharts";
+import { formatBRL } from "@/utils/formatters";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useState } from "react";
 
 interface ChartsProps {
   assets: CalculatedAsset[];
@@ -42,6 +45,7 @@ const gradientFills = [
 ];
 
 export function Charts({ assets }: ChartsProps) {
+  const [selectedBroker, setSelectedBroker] = useState<string>("Todas");
   const LABEL_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\"";
 
   // Fallback local para classificar tipo de ativo quando não vier do backend (ex.: mock)
@@ -58,8 +62,14 @@ export function Charts({ assets }: ChartsProps) {
     if (/[3-9]$/.test(t)) return 'Ação';
     return 'Outro';
   };
-  // Dados para pizza de alocação por ticker
-  const tickerData = assets.map((asset, i) => ({
+  
+  // Filtra os ativos pela corretora selecionada
+  const filteredAssets = selectedBroker === "Todas" 
+    ? assets 
+    : assets.filter(a => a.corretora === selectedBroker);
+  
+  // Dados para pizza de alocação por ticker (usando ativos filtrados)
+  const tickerData = filteredAssets.map((asset, i) => ({
     name: asset.ticker_normalizado.replace(".SA", ""),
     value: asset.valor_total,
     color: TICKER_PALETTE[i % TICKER_PALETTE.length],
@@ -127,6 +137,9 @@ export function Charts({ assets }: ChartsProps) {
 
   const tickerLegend = buildLegend(tickerData);
   const corretoraLegend = buildLegend(corretoraData);
+  
+  // Lista de corretoras disponíveis para o filtro
+  const availableBrokers = Array.from(new Set(assets.map(a => a.corretora))).sort();
 
   // Dados para pizza de alocação por tipo de ativo (Ação, FII, ETF)
   const tipoAtivoMap = new Map<string, number>();
@@ -173,7 +186,20 @@ export function Charts({ assets }: ChartsProps) {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Alocação por Ticker */}
       <div className="bg-card p-6 rounded-xl border border-border">
-        <h3 className="text-lg font-bold text-foreground mb-4">Alocação por Ticker</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-foreground">Alocação por Ticker</h3>
+          <Select value={selectedBroker} onValueChange={setSelectedBroker}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filtrar corretora" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Todas">Todas Corretoras</SelectItem>
+              {availableBrokers.map(broker => (
+                <SelectItem key={broker} value={broker}>{broker}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex flex-col md:flex-row items-center gap-4">
           <div className="w-full md:flex-1">
             <ResponsiveContainer width="100%" height={320}>
@@ -313,7 +339,7 @@ export function Charts({ assets }: ChartsProps) {
             />
             <Tooltip
               cursor={{ fill: "hsl(var(--accent) / 0.1)" }}
-              formatter={(value: number) => [`${value.toFixed(2)}%`, "Dividend Yield"]}
+              formatter={(value: number) => [`${formatBRL(value, 2)}%`, "Dividend Yield"]}
               contentStyle={{ 
                 backgroundColor: "hsl(var(--card))", 
                 color: "hsl(var(--foreground))", 
@@ -333,7 +359,7 @@ export function Charts({ assets }: ChartsProps) {
               <LabelList 
                 dataKey="dy" 
                 position="top" 
-                formatter={(v: number) => `${v.toFixed(1)}%`} 
+                formatter={(v: number) => `${formatBRL(v, 1)}%`} 
                 style={{ fontSize: 11, fontWeight: 600, fill: "hsl(var(--foreground))", fontFamily: LABEL_FONT }} 
               />
             </Bar>
