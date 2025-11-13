@@ -16,9 +16,17 @@ const getGradientClass = (corretora: string): string => {
   const gradients: Record<string, string> = {
     Nubank: "bg-gradient-to-br from-nubank-start to-nubank-end",
     XP: "bg-gradient-to-br from-xp-start to-xp-end",
-    Itaú: "bg-gradient-to-br from-itau-start to-itau-end",
-    Santander: "bg-gradient-to-br from-santander-start to-santander-end",
-    BTG: "bg-gradient-to-br from-btg-start to-btg-end",
+    Inco: "bg-gradient-to-br from-other-start to-other-end",
+    Clear: "bg-gradient-to-br from-other-start to-other-end",
+    Sofisa: "bg-gradient-to-br from-other-start to-other-end",
+    "Grão": "bg-gradient-to-br from-other-start to-other-end",
+    Inter: "bg-gradient-to-br from-other-start to-other-end",
+    Nomad: "bg-gradient-to-br from-other-start to-other-end",
+    Genial: "bg-gradient-to-br from-other-start to-other-end",
+    Binance: "bg-gradient-to-br from-other-start to-other-end",
+    Itaú: "bg-gradient-to-br from-other-start to-other-end",
+    Santander: "bg-gradient-to-br from-other-start to-other-end",
+    BTG: "bg-gradient-to-br from-other-start to-other-end",
     Outros: "bg-gradient-to-br from-other-start to-other-end",
   };
   return gradients[corretora] || gradients.Outros;
@@ -242,6 +250,18 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
                 </div>
               )}
               
+              {asset.data_aplicacao && (
+                <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-white/60" />
+                    <span className="text-sm text-white/80">Aplicação</span>
+                  </div>
+                  <span className="text-sm font-semibold text-white">
+                    {new Date(asset.data_aplicacao).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+              )}
+
               {asset.data_vencimento && (
                 <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
                   <div className="flex items-center gap-2">

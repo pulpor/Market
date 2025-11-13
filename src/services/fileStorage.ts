@@ -1,5 +1,9 @@
 import { Asset } from "@/types/asset";
 import { supabase } from "@/lib/supabase";
+// The generated Supabase types are currently empty (no tables declared),
+// which makes supabase.from<'assets'> types resolve to never. Use a local
+// untyped alias to avoid blocking builds while keeping a single client instance.
+const sb: any = supabase;
 
 const API_URL = "http://localhost:3001/api/assets";
 const LOCAL_STORAGE_KEY = "dashboard-b3-assets";
@@ -16,9 +20,10 @@ export async function loadAssets(): Promise<Asset[]> {
   // Tentativa 1: Supabase
   if (hasSupabase) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
       if (user) {
-        const { data, error } = await supabase
+        const { data, error } = await sb
           .from('assets')
           .select('*')
           .eq('user_id', user.id)
@@ -38,6 +43,7 @@ export async function loadAssets(): Promise<Asset[]> {
             indice_referencia: asset.indice_referencia ?? undefined,
             taxa_contratada: asset.taxa_contratada ? parseFloat(asset.taxa_contratada) : undefined,
             data_vencimento: asset.data_vencimento ?? undefined,
+            data_aplicacao: (asset as any).data_aplicacao ?? undefined,
             valor_atual_rf: asset.valor_atual_rf ? parseFloat(asset.valor_atual_rf) : undefined,
           }));
         } else {
@@ -118,7 +124,8 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
   // 1) Tenta Supabase primeiro se configurado
   if (hasSupabase) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await sb.auth.getSession();
+        const user = session?.user;
       
       if (!user) {
         console.error("❌ Usuário não autenticado");
@@ -128,7 +135,7 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
         // ESTRATÉGIA SEGURA: UPSERT ao invés de DELETE+INSERT
         // Atualiza registros existentes OU insere novos, SEM deletar nada
         if (assets.length > 0) {
-          const { error: upsertError } = await supabase
+          const { error: upsertError } = await sb
             .from('assets')
             .upsert(
               assets.map(asset => ({

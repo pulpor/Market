@@ -46,6 +46,48 @@ app.post('/api/assets', async (req, res) => {
   }
 });
 
+// Proxy simples para indicadores de mercado (evita CORS no browser)
+app.get('/api/market/ibov', async (req, res) => {
+  try {
+    // Fonte 1: brapi (^BVSP)
+    const url = 'https://brapi.dev/api/quote/%5EBVSP';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('brapi not ok');
+    const j = await r.json();
+    const it = j?.results?.[0] || {};
+    const payload = {
+      name: it?.shortName || 'Ibovespa',
+      symbol: 'IBOV',
+      price: Number(it?.regularMarketPrice ?? NaN),
+      changePct: Number(it?.regularMarketChangePercent ?? NaN),
+      currency: 'BRL',
+      source: 'brapi',
+      time: it?.regularMarketTime || null,
+    };
+    return res.json(payload);
+  } catch (e) {
+    // Fallback 2: Yahoo Finance (pode falhar em alguns ambientes)
+    try {
+      const yurl = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols=%5EBVSP';
+      const ry = await fetch(yurl);
+      const jy = await ry.json();
+      const it = jy?.quoteResponse?.result?.[0] || {};
+      const payload = {
+        name: it?.shortName || 'Ibovespa',
+        symbol: 'IBOV',
+        price: Number(it?.regularMarketPrice ?? NaN),
+        changePct: Number(it?.regularMarketChangePercent ?? NaN),
+        currency: it?.currency || 'BRL',
+        source: 'yahoo',
+        time: it?.regularMarketTime || null,
+      };
+      return res.json(payload);
+    } catch (err) {
+      return res.status(500).json({ error: 'Falha ao obter IBOV' });
+    }
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🔒 Servidor de storage rodando em http://localhost:${PORT}`);
   console.log(`📁 Arquivo: ${ASSETS_FILE}`);

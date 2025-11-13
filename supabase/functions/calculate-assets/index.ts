@@ -16,6 +16,7 @@ interface Asset {
   indice_referencia?: string;
   taxa_contratada?: number;
   data_vencimento?: string;
+  data_aplicacao?: string;
   valor_atual_rf?: number;
 }
 
@@ -245,12 +246,91 @@ serve(async (req: Request) => {
     console.log(`Processando ${ativos.length} ativos...`);
 
     // Busca cotações em paralelo
+    function toNumber(val: unknown): number | undefined {
+      const n = typeof val === 'string' ? parseFloat(val) : (typeof val === 'number' ? val : undefined);
+      return Number.isFinite(n as number) ? (n as number) : undefined;
+    }
+
+    function isBusinessDay(d: Date): boolean {
+      const day = d.getDay();
+      return day !== 0 && day !== 6; // desconsidera finais de semana (feriados ignorados no MVP)
+    }
+    function businessDaysBetween(fromISO: string, to: Date): number {
+      const from = new Date(fromISO);
+      if (to <= from) return 0;
+      let count = 0;
+      const cur = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+      while (cur < to) {
+        if (isBusinessDay(cur)) count++;
+        cur.setDate(cur.getDate() + 1);
+      }
+      return count;
+    }
+
+    // Taxas anuais base aproximadas (MVP). TODO: trocar por fonte oficial (Bacen/IBGE)
+    const CDI_ANUAL_PADRAO = 12.65; // % a.a.
+    const SELIC_ANUAL_PADRAO = 12.25; // % a.a.
+    const IPCA_ANUAL_PADRAO = 4.5; // % a.a.
+
+  function computeRfValorAtual(asset: Asset): number | undefined {
+      const principal = toNumber(asset.preco_medio);
+      if (!principal || principal <= 0) return undefined;
+
+      const dataAplic = asset.data_aplicacao;
+      const taxa = toNumber(asset.taxa_contratada);
+      const indice = (asset.indice_referencia || '').toUpperCase();
+
+      if (!dataAplic || !indice) return undefined; // precisa pelo menos da data de aplicação e do índice
+
+      const hoje = new Date();
+      // Base de contagem: 252 para CDI/Selic/LCI/LCA/CDB/Tesouro; caso contrário, 365
+      const tipo = (asset.tipo_ativo_manual || '').toUpperCase();
+      const usa252 = indice.includes('CDI') || indice.includes('SELIC') ||
+        tipo.includes('LCI') || tipo.includes('LCA') || tipo.includes('CDB') || tipo.includes('TESOURO');
+      const dias = usa252 ? businessDaysBetween(dataAplic, hoje) : Math.max(0, Math.floor((hoje.getTime() - new Date(dataAplic).getTime()) / (1000*60*60*24)));
+      if (dias <= 0) return principal; // sem dias decorridos, sem acréscimo
+
+      let taxaAnual: number | undefined;
+
+      if (indice.includes('PRÉ')) {
+        taxaAnual = taxa; // já é nominal a.a.
+      } else if (indice.includes('SELIC')) {
+        taxaAnual = taxa ?? SELIC_ANUAL_PADRAO;
+      } else if (indice.includes('CDI')) {
+        // Heurística: taxa >= 20 => % do CDI (ex: 110 => 110% do CDI). Caso contrário, trata como CDI + spread (% absoluto)
+        if (typeof taxa === 'number') {
+          if (taxa >= 20) {
+            taxaAnual = (taxa / 100) * CDI_ANUAL_PADRAO; // 110 => 1.10 * CDI
+          } else {
+            taxaAnual = CDI_ANUAL_PADRAO + taxa; // CDI + X%
+          }
+        } else {
+          taxaAnual = CDI_ANUAL_PADRAO;
+        }
+      } else if (indice.includes('IPCA') || indice.includes('IGP')) {
+        taxaAnual = (IPCA_ANUAL_PADRAO) + (taxa ?? 0); // IPCA + spread
+      } else {
+        // Desconhecido: usa taxa contratada se houver
+        taxaAnual = taxa;
+      }
+
+      if (typeof taxaAnual !== 'number' || !Number.isFinite(taxaAnual)) return undefined;
+
+      const baseDias = usa252 ? 252 : 365;
+      const taxaDia = taxaAnual / 100 / baseDias;
+      const fator = Math.pow(1 + taxaDia, dias);
+      return principal * fator;
+    }
+
     const promises = ativos.map(async (asset: Asset) => {
       try {
         // Se tipo manual está definido (Previdência, Tesouro, etc), não busca Yahoo
         if (asset.tipo_ativo_manual) {
           const valorAplicado = asset.preco_medio;
-          const valorAtual = asset.valor_atual_rf || valorAplicado;
+          const estimado = computeRfValorAtual(asset);
+          const valorAtual = (typeof asset.valor_atual_rf === 'number' && asset.valor_atual_rf > 0)
+            ? asset.valor_atual_rf
+            : (estimado ?? valorAplicado);
           const valor_total = valorAtual;
           const rentabilidade = ((valorAtual - valorAplicado) / valorAplicado) * 100;
           

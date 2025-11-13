@@ -1,13 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('⚠️ Supabase credentials not found. Auth features will be disabled.')
-}
-
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
-)
+// Single source of truth for the Supabase client.
+// Re-export the generated client to avoid creating multiple GoTrueClient instances.
+export { supabase } from '@/integrations/supabase/client'

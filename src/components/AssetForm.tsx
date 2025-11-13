@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,19 @@ interface AssetFormProps {
   onCancelEdit?: () => void;
 }
 
-const corretoras: Corretora[] = ["Nubank", "XP", "Itaú", "Santander", "BTG", "Outros"];
+const corretoras: Corretora[] = [
+  "Nubank",
+  "Inco",
+  "XP",
+  "Clear",
+  "Sofisa",
+  "Grão",
+  "Inter",
+  "Nomad",
+  "Genial",
+  "Binance",
+  "Outros",
+];
 const tiposRendaFixa = ["Previdência", "Tesouro Direto", "CDB", "LCI/LCA", "Debêntures", "Outros"] as const;
 const indicesReferencia = ["CDI", "IPCA", "Pré-fixado", "Selic", "IGP-M", "Outros"] as const;
 
@@ -36,6 +49,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
   const [indiceReferencia, setIndiceReferencia] = useState<typeof indicesReferencia[number]>("CDI");
   const [taxaContratada, setTaxaContratada] = useState("");
   const [dataVencimento, setDataVencimento] = useState("");
+  const [dataAplicacao, setDataAplicacao] = useState("");
 
   // Preenche o formulário quando editingAsset mudar
   useEffect(() => {
@@ -47,9 +61,10 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         setTipoRendaFixa(editingAsset.tipo_ativo_manual as typeof tiposRendaFixa[number]);
         setValorAplicado(editingAsset.preco_medio.toString());
         setValorAtual((editingAsset.valor_atual_rf || editingAsset.preco_medio).toString());
-        setIndiceReferencia((editingAsset.indice_referencia || "CDI") as typeof indicesReferencia[number]);
+  setIndiceReferencia((editingAsset.indice_referencia || "CDI") as typeof indicesReferencia[number]);
         setTaxaContratada(editingAsset.taxa_contratada?.toString() || "");
         setDataVencimento(editingAsset.data_vencimento || "");
+  setDataAplicacao((editingAsset as any).data_aplicacao || "");
         setCorretora(editingAsset.corretora);
       } else {
         // Renda Variável
@@ -87,7 +102,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       }
 
       const newAsset: Asset = {
-        id: editingAsset?.id || Date.now().toString(),
+        id: editingAsset?.id || uuidv4(),
         ticker: ticker.toUpperCase().trim(),
         quantidade: qtd,
         preco_medio: preco,
@@ -102,29 +117,29 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       setPrecoMedio("");
     } else {
       // Validação Renda Fixa
-      if (!nomeAtivo || !valorAplicado || !valorAtual) {
+      if (!nomeAtivo || !valorAplicado) {
         toast({
           title: "Campos obrigatórios",
-          description: "Preencha nome, valor aplicado e valor atual",
+          description: "Preencha nome e valor aplicado. Valor atual pode ser calculado automaticamente.",
           variant: "destructive",
         });
         return;
       }
 
       const valAplicado = parseFloat(valorAplicado);
-      const valAtual = parseFloat(valorAtual);
+      const valAtual = valorAtual ? parseFloat(valorAtual) : undefined;
 
-      if (valAplicado <= 0 || valAtual <= 0) {
+      if (valAplicado <= 0) {
         toast({
           title: "Valores inválidos",
-          description: "Valores devem ser maiores que zero",
+          description: "Valor aplicado deve ser maior que zero",
           variant: "destructive",
         });
         return;
       }
 
       const newAsset: Asset = {
-        id: editingAsset?.id || Date.now().toString(),
+        id: editingAsset?.id || uuidv4(),
         ticker: nomeAtivo.toUpperCase().trim(),
         quantidade: 1, // Renda fixa sempre 1 unidade
         preco_medio: valAplicado,
@@ -134,6 +149,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         taxa_contratada: taxaContratada ? parseFloat(taxaContratada) : undefined,
         data_vencimento: dataVencimento || undefined,
         valor_atual_rf: valAtual,
+        data_aplicacao: dataAplicacao || undefined,
       };
 
       onAddAndCalculate(newAsset);
@@ -144,6 +160,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       setValorAtual("");
       setTaxaContratada("");
       setDataVencimento("");
+      setDataAplicacao("");
     }
   };
 
@@ -277,7 +294,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="valorAtual">Valor Atual (R$) *</Label>
+              <Label htmlFor="valorAtual">Valor Atual (R$)</Label>
               <Input
                 id="valorAtual"
                 type="number"
@@ -287,7 +304,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                 value={valorAtual}
                 onChange={(e) => setValorAtual(e.target.value)}
               />
-            </div>
+              </div>
 
             <div className="space-y-2">
               <Label htmlFor="indiceReferencia">Índice de Referência</Label>
@@ -324,6 +341,16 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                 type="date"
                 value={dataVencimento}
                 onChange={(e) => setDataVencimento(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dataAplicacao">Data de Aplicação</Label>
+              <Input
+                id="dataAplicacao"
+                type="date"
+                value={dataAplicacao}
+                onChange={(e) => setDataAplicacao(e.target.value)}
               />
             </div>
 

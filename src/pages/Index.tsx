@@ -1,12 +1,17 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Asset, CalculatedAsset, PortfolioSummary, Corretora } from "@/types/asset";
 import { AssetForm } from "@/components/AssetForm";
+import { MarketBar } from "@/components/MarketBar";
 import { AssetCard } from "@/components/AssetCard";
 import { Charts } from "@/components/Charts";
+import { DebtsSection } from "@/components/DebtsSection";
+import { ReturnsForecastSection } from "@/components/ReturnsForecastSection";
+import { loadDebts } from "@/services/debtStorage";
+import { DebtsState } from "@/types/debt";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search } from "lucide-react";
+import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -14,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Removido import do util PDF
 
 const Index = () => {
   const { user, signOut } = useAuth();
@@ -114,18 +120,106 @@ const Index = () => {
     setIsCalculating(true);
     try {
       const result = await calculateAssets(assetsToUse);
-      
-      // Enriquece cada ativo com os indicadores adicionais
-      const valorTotalCarteira = result.resumo.valor_total_carteira;
-      const enrichedAssets = result.ativos.map(asset => ({
+
+      // Cálculo local de RF (MVP) para garantir funcionamento mesmo sem função atualizada
+      const CDI_ANUAL_PADRAO = 12.65;
+      const SELIC_ANUAL_PADRAO = 12.25;
+      const IPCA_ANUAL_PADRAO = 4.5;
+
+      const toNumber = (val: unknown): number | undefined => {
+        const n = typeof val === 'string' ? parseFloat(val) : (typeof val === 'number' ? val : undefined);
+        return Number.isFinite(n as number) ? (n as number) : undefined;
+      };
+      const isBusinessDay = (d: Date) => {
+        const day = d.getDay();
+        return day !== 0 && day !== 6;
+      };
+      const businessDaysBetween = (fromISO: string, to: Date): number => {
+        const from = new Date(fromISO);
+        if (to <= from) return 0;
+        let count = 0;
+        const cur = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+        while (cur < to) {
+          if (isBusinessDay(cur)) count++;
+          cur.setDate(cur.getDate() + 1);
+        }
+        return count;
+      };
+      const computeRfValorAtualLocal = (a: any): number | undefined => {
+        if (!a?.tipo_ativo_manual) return undefined;
+        const principal = toNumber(a.preco_medio);
+        if (!principal || principal <= 0) return undefined;
+        const dataAplic = a.data_aplicacao as string | undefined;
+        const taxa = toNumber(a.taxa_contratada);
+        const indice = (a.indice_referencia || '').toUpperCase();
+        if (!dataAplic) return undefined;
+        const hoje = new Date();
+        const tipo = (a.tipo_ativo_manual || '').toUpperCase();
+        const usa252 = indice.includes('CDI') || indice.includes('SELIC') ||
+          tipo.includes('LCI') || tipo.includes('LCA') || tipo.includes('CDB') || tipo.includes('TESOURO');
+        const dias = usa252 ? businessDaysBetween(dataAplic, hoje) : Math.max(0, Math.floor((hoje.getTime() - new Date(dataAplic).getTime()) / (1000*60*60*24)));
+        if (dias <= 0) return principal;
+        let taxaAnual: number | undefined;
+        if (indice.includes('PRÉ')) {
+          taxaAnual = taxa;
+        } else if (indice.includes('SELIC')) {
+          taxaAnual = taxa ?? SELIC_ANUAL_PADRAO;
+        } else if (indice.includes('CDI')) {
+          if (typeof taxa === 'number') {
+            taxaAnual = taxa >= 20 ? (taxa / 100) * CDI_ANUAL_PADRAO : CDI_ANUAL_PADRAO + taxa;
+          } else {
+            taxaAnual = CDI_ANUAL_PADRAO;
+          }
+        } else if (indice.includes('IPCA') || indice.includes('IGP')) {
+          taxaAnual = IPCA_ANUAL_PADRAO + (taxa ?? 0);
+        } else {
+          taxaAnual = taxa; // Outros => usa taxa nominal se houver
+        }
+        if (typeof taxaAnual !== 'number' || !Number.isFinite(taxaAnual)) return undefined;
+        const baseDias = usa252 ? 252 : 365;
+        const taxaDia = taxaAnual / 100 / baseDias;
+        const fator = Math.pow(1 + taxaDia, dias);
+        return principal * fator;
+      };
+
+      // Ajusta ativos usando cálculo local quando fizer sentido
+      const adjustedAssets = result.ativos.map((a) => {
+        if (!a.tipo_ativo_manual) return a;
+        const estimado = computeRfValorAtualLocal(a);
+        if (typeof estimado === 'number' && estimado > 0) {
+          const valorAplicado = a.preco_medio;
+          const valorAtual = estimado;
+          const valor_total = valorAtual;
+          const variacao_percentual = ((valorAtual - valorAplicado) / valorAplicado) * 100;
+          const pl_posicao = valorAtual - valorAplicado;
+          return { ...a, preco_atual: valorAtual, valor_total, variacao_percentual, pl_posicao };
+        }
+        return a;
+      });
+
+      // Recalcula o resumo com base nos ativos ajustados
+      const validAssets = adjustedAssets.filter(a => (typeof a.preco_atual === 'number' && a.preco_atual > 0));
+      const valor_total_carteira_local = validAssets.reduce((sum, a) => sum + a.valor_total, 0);
+      const pl_total_local = validAssets.reduce((sum, a) => sum + a.pl_posicao, 0);
+      const dy_ponderado_local = validAssets.reduce((sum, a) => {
+        const part = valor_total_carteira_local > 0 ? (a.valor_total / valor_total_carteira_local) : 0;
+        return sum + a.dividend_yield * part;
+      }, 0);
+
+      const valorTotalCarteira = valor_total_carteira_local;
+      const enrichedAssets = adjustedAssets.map(asset => ({
         ...asset,
         peso_carteira: valorTotalCarteira > 0 ? (asset.valor_total / valorTotalCarteira) * 100 : 0,
         yoc: asset.preco_medio > 0 ? (asset.dividend_yield * asset.preco_atual / asset.preco_medio) : 0,
         projecao_dividendos_anual: (asset.dividend_yield / 100) * asset.valor_total,
       }));
-      
+
       setCalculatedAssets(enrichedAssets);
-      setSummary(result.resumo);
+      setSummary({
+        valor_total_carteira: valor_total_carteira_local,
+        dy_ponderado: dy_ponderado_local,
+        pl_total: pl_total_local,
+      });
       await saveAssets(assetsToUse);
 
       if (!silent) {
@@ -205,7 +299,7 @@ const Index = () => {
           <div className="text-center md:text-left">
             <h1 className="text-4xl md:text-5xl font-bold text-foreground flex items-center justify-center md:justify-start gap-3">
               <TrendingUp className="h-10 w-10 text-primary" />
-              Dashboard B3
+              Minha Carteira
             </h1>
             <p className="text-muted-foreground text-lg">Acompanhe sua carteira e Dividend Yield em tempo real</p>
           </div>
@@ -219,6 +313,9 @@ const Index = () => {
             </Button>
           </div>
         </header>
+
+        {/* Indicadores de Mercado */}
+        <MarketBar />
 
         {/* Formulário */}
         <AssetForm 
@@ -235,17 +332,20 @@ const Index = () => {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-foreground">Resumo da Carteira</h2>
                 <TabsList className="grid grid-cols-4 w-auto">
-                  <TabsTrigger value="total">Total</TabsTrigger>
+                  <TabsTrigger value="total">
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Total
+                  </TabsTrigger>
                   <TabsTrigger value="corretora">
                     <Building2 className="h-4 w-4 mr-2" />
                     Por Corretora
                   </TabsTrigger>
                   <TabsTrigger value="tipo">
-                    <TrendingUp className="h-4 w-4 mr-2" />
+                    <Layers className="h-4 w-4 mr-2" />
                     Por Tipo
                   </TabsTrigger>
                   <TabsTrigger value="setor">
-                    <TrendingUp className="h-4 w-4 mr-2" />
+                    <LayoutGrid className="h-4 w-4 mr-2" />
                     Por Setor
                   </TabsTrigger>
                 </TabsList>
@@ -599,35 +699,40 @@ const Index = () => {
             <div className="flex flex-col gap-4 mb-4">
               <h2 className="text-2xl font-bold text-foreground">Meus Ativos</h2>
 
-              {/* Barra de busca */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Buscar por ticker ou nome do ativo..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 max-w-md"
-                />
-                {searchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 h-7 px-2 text-muted-foreground hover:text-foreground"
-                  >
-                    Limpar
-                  </Button>
-                )}
-              </div>
+              {/* Barra de filtros/ordenação + busca */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 w-full md:w-auto items-end">
+                {/* Busca */}
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground flex items-center gap-1"><Search className="h-4 w-4" /> Busca</div>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Buscar por ticker ou nome do ativo..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-10"
+                    />
+                    {searchQuery && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 h-7 px-2 text-muted-foreground hover:text-foreground"
+                        tabIndex={-1}
+                      >
+                        Limpar
+                      </Button>
+                    )}
+                  </div>
+                </div>
 
-              {/* Barra de filtros/ordenação */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* Filtrar Corretora */}
                 <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground flex items-center gap-1"><Filter className="h-4 w-4" /> Corretora</div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1">
+                    <Building2 className="h-4 w-4" /> Corretora
+                  </div>
                   <Select value={brokerFilter} onValueChange={(v) => setBrokerFilter(v as any)}>
-                    <SelectTrigger className="min-w-[180px]"><SelectValue placeholder="Todas" /></SelectTrigger>
+                    <SelectTrigger className="min-w-[120px]"><SelectValue placeholder="Todas" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Todas">Todas</SelectItem>
                       <SelectItem value="Nubank">Nubank</SelectItem>
@@ -642,9 +747,11 @@ const Index = () => {
 
                 {/* Ordenar por */}
                 <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Ordenar por</div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1">
+                    <Filter className="h-4 w-4" /> Ordenar por
+                  </div>
                   <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
-                    <SelectTrigger className="min-w-[200px]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="min-w-[120px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="valor_total">Maior valor</SelectItem>
                       <SelectItem value="dividend_yield">Maior DY</SelectItem>
@@ -658,7 +765,9 @@ const Index = () => {
 
                 {/* Direção */}
                 <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Direção</div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-1">
+                    <ArrowDownWideNarrow className="h-4 w-4" /> Direção
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -732,6 +841,71 @@ const Index = () => {
                 </Button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Botão PDF acima dos lembretes */}
+        {calculatedAssets.length > 0 && summary && (
+          <div className="flex justify-end mb-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={async () => {
+                const jsPDF = (window as any).jspdf?.jsPDF;
+                if (!jsPDF) {
+                  alert("Biblioteca de PDF não carregada. Verifique sua conexão de internet.");
+                  return;
+                }
+                const doc = new jsPDF();
+                doc.setFontSize(18);
+                doc.text("Resumo da Carteira", 14, 18);
+                doc.setFontSize(12);
+                doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', {minimumFractionDigits:2})}` , 14, 28);
+                doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', {minimumFractionDigits:2})}%`, 14, 36);
+                doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', {minimumFractionDigits:2})}%`, 14, 44);
+                doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', {minimumFractionDigits:2})}`, 14, 52);
+                (doc as any).autoTable({
+                  startY: 60,
+                  head: [[
+                    "Ativo",
+                    "Tipo",
+                    "Índice",
+                    "Taxa",
+                    "Corretora",
+                    "Valor Atual",
+                    "Valor Aplicado",
+                    "Rentabilidade %",
+                    "P/L Posição"
+                  ]],
+                  body: calculatedAssets.map(a => {
+                    const indice = a.indice_referencia || '';
+                    const taxa = (typeof a.taxa_contratada === 'number' && a.taxa_contratada > 0)
+                      ? `${a.taxa_contratada.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}%`
+                      : '';
+                    return [
+                      a.ticker_normalizado.replace('.SA', ''),
+                      a.tipo_ativo_manual || a.tipo_ativo || '',
+                      indice,
+                      taxa,
+                      a.corretora,
+                      `R$ ${a.valor_total.toLocaleString('pt-BR', {minimumFractionDigits:2})}`,
+                      (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : `R$ ${a.valor_total.toLocaleString('pt-BR', {minimumFractionDigits:2})}`,
+                      `${a.variacao_percentual?.toLocaleString('pt-BR', {minimumFractionDigits:2}) ?? '-'}%`,
+                      `R$ ${a.pl_posicao?.toLocaleString('pt-BR', {minimumFractionDigits:2}) ?? '-'}`
+                    ];
+                  }),
+                  styles: { fontSize: 10 },
+                  headStyles: { fillColor: [44, 62, 80] },
+                  margin: { left: 14, right: 14 },
+                  theme: 'grid',
+                });
+                doc.save("carteira_dashboard_b3.pdf");
+              }}
+            >
+              <Download className="h-4 w-4" />
+              Baixar PDF da Carteira
+            </Button>
           </div>
         )}
 
@@ -847,6 +1021,9 @@ const Index = () => {
           </div>
         )}
 
+        {/* Previsão de Retornos + Minhas Dívidas (posicionado antes dos gráficos) */}
+        <ForecastWithDebts />
+
         {/* Gráficos */}
         {calculatedAssets.length > 0 && (
           <div>
@@ -858,5 +1035,59 @@ const Index = () => {
     </div>
   );
 };
+
+// Componente wrapper para integrar Dívidas e Previsão de Retornos
+
+function computeDebtForecast(state: DebtsState, month: string){
+  // Financiamento
+  let financingParcela = 0;
+  if(state.financing){
+    if(state.financing.parcela_atual && state.financing.parcela_atual > 0){
+      financingParcela = state.financing.parcela_atual;
+    } else {
+      const P = state.financing.valor_financiado || 0;
+      const n = state.financing.prazo_total_meses || 0;
+      const i_a = state.financing.taxa_juros_nominal || 0;
+      const i_m = (i_a/12)/100;
+      if(P>0 && n>0){
+        financingParcela = i_m>0 ? (P*i_m)/(1 - Math.pow(1+i_m, -n)) : P/n;
+      }
+    }
+  }
+  const cardMonthTotal = state.cardSpending.filter(e=>e.month===month).reduce((s,e)=>s+e.amount,0);
+  // Considera apenas "Outros" com vencimento no mês selecionado
+  const othersTotal = state.others.reduce((s,o)=>{
+    if(!o.vencimento) return s; // sem vencimento não entra por padrão
+    return o.vencimento.startsWith(month) ? s + o.valor : s;
+  },0);
+  return { financingParcela, cardMonthTotal, othersTotal };
+}
+
+function ForecastWithDebts(){
+  const [month,setMonth] = useState(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;});
+  const [debtsState,setDebtsState] = useState<DebtsState>({ financing: undefined, cardSpending: [], others: [] });
+  const [totals,setTotals] = useState({ financingParcela:0, cardMonthTotal:0, othersTotal:0 });
+
+  const recompute = useCallback((st: DebtsState, m:string)=>{
+    setTotals(computeDebtForecast(st,m));
+  },[]);
+
+  useEffect(()=>{ (async ()=>{ const st = await loadDebts(); setDebtsState(st); recompute(st,month); })(); },[month, recompute]);
+
+  const handleDebtsChange = (st: DebtsState)=>{ setDebtsState(st); recompute(st, month); };
+
+  return (
+    <div>
+      <DebtsSection onChange={handleDebtsChange} />
+      <ReturnsForecastSection
+        financingParcela={totals.financingParcela}
+        cardMonthTotal={totals.cardMonthTotal}
+        othersTotal={totals.othersTotal}
+        month={month}
+        onMonthChange={(m)=>{ setMonth(m); recompute(debtsState,m); }}
+      />
+    </div>
+  );
+}
 
 export default Index;

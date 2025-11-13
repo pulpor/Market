@@ -1,4 +1,15 @@
-export type Corretora = "Nubank" | "XP" | "Itaú" | "Santander" | "BTG" | "Outros";
+export type Corretora =
+  | "Nubank"
+  | "Inco"
+  | "XP"
+  | "Clear"
+  | "Sofisa"
+  | "Grão"
+  | "Inter"
+  | "Nomad"
+  | "Genial"
+  | "Binance"
+  | "Outros";
 
 export interface Asset {
   id: string;
@@ -11,6 +22,7 @@ export interface Asset {
   indice_referencia?: string; // CDI, IPCA, Selic, etc.
   taxa_contratada?: number; // Taxa em % a.a.
   data_vencimento?: string; // Data de vencimento
+  data_aplicacao?: string; // Data de aplicação (início da contagem para RF)
   valor_atual_rf?: number; // Valor atual para renda fixa
 }
 
