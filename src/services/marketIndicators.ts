@@ -117,15 +117,23 @@ async function fetchFromStooq(stooqSymbol: string, displaySymbol: string, name: 
 
 async function fetchIndexWithFallback(brapiSymbol: string, displaySymbol: string, name: string, stooqSymbol: string, currency: string = 'USD'): Promise<Indicator> {
   // 1) Try brapi first (supports multiple indices including US)
+  console.log(`[fetchIndexWithFallback] ${name}: brapi=${brapiSymbol}, display=${displaySymbol}`);
   const brapiResult = await fetchFromBrapi(brapiSymbol, displaySymbol, name, currency);
   if (brapiResult.price != null) {
+    console.log(`[fetchIndexWithFallback] ${name}: brapi success, symbol=${brapiResult.symbol}, price=${brapiResult.price}`);
     return brapiResult;
   }
   
   // 2) Fallback to Stooq
-  return fetchFromStooq(stooqSymbol, displaySymbol, name, currency);
+  console.log(`[fetchIndexWithFallback] ${name}: brapi failed, trying Stooq`);
+  const stooqResult = await fetchFromStooq(stooqSymbol, displaySymbol, name, currency);
+  console.log(`[fetchIndexWithFallback] ${name}: stooq result, symbol=${stooqResult.symbol}, price=${stooqResult.price}`);
+  return stooqResult;
 }
 
+// Symbol mapping for market indices:
+// - brapi.dev API expects Yahoo Finance tickers (^BVSP, ^GSPC, etc.)
+// - MarketBar component expects display symbols (IBOV, ^GSPC, etc.)
 export async function fetchIbovespa(): Promise<Indicator> {
   return fetchIndexWithFallback('^BVSP', 'IBOV', 'Ibovespa', '%5Ebvsp', 'BRL');
 }
@@ -221,6 +229,7 @@ export async function fetchAllIndicators(): Promise<Indicator[]> {
     }
   }
   // Fallback client-side
+  console.log('[fetchAllIndicators] Using client-side fallback...');
   const [ibov, usd, btc, sp500, dowJones, nasdaq] = await Promise.all([
     fetchIbovespa(),
     fetchUsdBrl(),
@@ -229,5 +238,7 @@ export async function fetchAllIndicators(): Promise<Indicator[]> {
     fetchDowJones(),
     fetchNasdaq(),
   ]);
-  return [ibov, usd, btc, sp500, dowJones, nasdaq];
+  const result = [ibov, usd, btc, sp500, dowJones, nasdaq];
+  console.log('[fetchAllIndicators] Result:', result.map(r => ({ symbol: r.symbol, price: r.price, source: r.source })));
+  return result;
 }
