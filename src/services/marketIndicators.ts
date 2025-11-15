@@ -62,9 +62,9 @@ export async function fetchBtcBrl(): Promise<Indicator> {
   }
 }
 
-async function fetchFromBrapi(symbol: string, name: string, currency: string = 'USD'): Promise<Indicator> {
+async function fetchFromBrapi(brapiSymbol: string, displaySymbol: string, name: string, currency: string = 'USD'): Promise<Indicator> {
   try {
-    const url = `https://brapi.dev/api/quote/${encodeURIComponent(symbol)}`;
+    const url = `https://brapi.dev/api/quote/${encodeURIComponent(brapiSymbol)}`;
     const res = await fetch(url);
     const json = await res.json();
     const it = json?.results?.[0] || {};
@@ -72,7 +72,7 @@ async function fetchFromBrapi(symbol: string, name: string, currency: string = '
     if (price != null) {
       return {
         name: it?.shortName || name,
-        symbol,
+        symbol: displaySymbol,
         price,
         changePct: toNumber(it?.regularMarketChangePercent),
         currency: it?.currency || currency,
@@ -83,10 +83,10 @@ async function fetchFromBrapi(symbol: string, name: string, currency: string = '
   } catch {
     // Fallback to unavailable if brapi fails
   }
-  return { name, symbol, price: null, changePct: null, currency, source: 'unavailable', time: null };
+  return { name, symbol: displaySymbol, price: null, changePct: null, currency, source: 'unavailable', time: null };
 }
 
-async function fetchFromStooq(stooqSymbol: string, name: string, symbol: string, currency: string = 'USD'): Promise<Indicator> {
+async function fetchFromStooq(stooqSymbol: string, displaySymbol: string, name: string, currency: string = 'USD'): Promise<Indicator> {
   try {
     const res = await fetch(`https://stooq.com/q/d/l/?s=${stooqSymbol}&i=d`);
     const txt = await res.text();
@@ -100,7 +100,7 @@ async function fetchFromStooq(stooqSymbol: string, name: string, symbol: string,
       if (close != null) {
         return {
           name,
-          symbol,
+          symbol: displaySymbol,
           price: close,
           changePct: null,
           currency,
@@ -112,34 +112,34 @@ async function fetchFromStooq(stooqSymbol: string, name: string, symbol: string,
   } catch {
     // Fallback to unavailable if stooq fails
   }
-  return { name, symbol, price: null, changePct: null, currency, source: 'unavailable', time: null };
+  return { name, symbol: displaySymbol, price: null, changePct: null, currency, source: 'unavailable', time: null };
 }
 
-async function fetchIndexWithFallback(symbol: string, name: string, stooqSymbol: string, currency: string = 'USD'): Promise<Indicator> {
+async function fetchIndexWithFallback(brapiSymbol: string, displaySymbol: string, name: string, stooqSymbol: string, currency: string = 'USD'): Promise<Indicator> {
   // 1) Try brapi first (supports multiple indices including US)
-  const brapiResult = await fetchFromBrapi(symbol, name, currency);
+  const brapiResult = await fetchFromBrapi(brapiSymbol, displaySymbol, name, currency);
   if (brapiResult.price != null) {
     return brapiResult;
   }
   
   // 2) Fallback to Stooq
-  return fetchFromStooq(stooqSymbol, name, symbol, currency);
+  return fetchFromStooq(stooqSymbol, displaySymbol, name, currency);
 }
 
 export async function fetchIbovespa(): Promise<Indicator> {
-  return fetchIndexWithFallback('IBOV', 'Ibovespa', '%5Ebvsp', 'BRL');
+  return fetchIndexWithFallback('^BVSP', 'IBOV', 'Ibovespa', '%5Ebvsp', 'BRL');
 }
 
 export async function fetchSP500(): Promise<Indicator> {
-  return fetchIndexWithFallback('^GSPC', 'S&P 500', '%5Espx', 'USD');
+  return fetchIndexWithFallback('^GSPC', '^GSPC', 'S&P 500', '%5Espx', 'USD');
 }
 
 export async function fetchDowJones(): Promise<Indicator> {
-  return fetchIndexWithFallback('^DJI', 'Dow Jones', '%5Edji', 'USD');
+  return fetchIndexWithFallback('^DJI', '^DJI', 'Dow Jones', '%5Edji', 'USD');
 }
 
 export async function fetchNasdaq(): Promise<Indicator> {
-  return fetchIndexWithFallback('^NDX', 'Nasdaq 100', '%5Endx', 'USD');
+  return fetchIndexWithFallback('^NDX', '^NDX', 'Nasdaq 100', '%5Endx', 'USD');
 }
 
 export async function fetchAllIndicators(): Promise<Indicator[]> {
