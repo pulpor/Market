@@ -83,28 +83,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
+    // Evita erro quando não há sessão ativa e força escopo local.
+    try {
+      const {
+        data: { session: currentSession },
+      } = await supabase.auth.getSession()
 
-    if (error) {
+      if (!currentSession) {
+        setUser(null)
+        setSession(null)
+        return
+      }
+
+      // Tenta uma saída "local" (não global). Se o backend recusar (403), seguimos limpando localmente.
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
+      if (error) {
+        // Suaviza 403/AuthSessionMissing: limpa estado local mesmo assim.
+        console.warn('SignOut retornou erro, limpando sessão local mesmo assim:', error?.message)
+      }
+    } catch (err: any) {
+      // Suaviza AuthSessionMissingError e outros
+      console.warn('SignOut falhou, prosseguindo com limpeza local:', err?.message)
+    } finally {
+      // Limpeza local forçada do estado e possível token no storage
+      try {
+        const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
+        if (url) {
+          const projectRef = new URL(url).host.split('.')[0]
+          const possibleKeys = [
+            `sb-${projectRef}-auth-token`,
+            `sb-${projectRef}-auth-token.local`,
+          ]
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i) || ''
+            if (possibleKeys.some(pk => k.startsWith(pk))) {
+              try { localStorage.removeItem(k) } catch {}
+            }
+          }
+        }
+      } catch {}
+
+      setUser(null)
+      setSession(null)
+
       toast({
-        title: 'Erro ao sair',
-        description: error.message,
-        variant: 'destructive',
+        title: 'Logout realizado',
+        description: 'Sessão encerrada localmente.',
       })
-      throw error
     }
-
-    toast({
-      title: 'Logout realizado',
-      description: 'Até logo!',
-    })
   }
 
   const signInWithGoogle = async () => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: `${window.location.origin}/`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     })
 

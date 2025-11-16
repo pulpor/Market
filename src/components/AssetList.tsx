@@ -1,4 +1,5 @@
 import { Asset } from "@/types/asset";
+import { getBrokerColor } from "@/utils/brokerColors";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -37,7 +38,10 @@ export function AssetList({ assets, onRemoveAsset }: AssetListProps) {
             <div className="flex-1">
               <div className="flex items-center gap-3">
                 <span className="font-bold text-lg text-foreground">{asset.ticker}</span>
-                <span className="text-sm text-muted-foreground">{asset.corretora}</span>
+                <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="inline-block h-3 w-3 rounded-full border border-border" style={{ backgroundColor: getBrokerColor(asset.corretora as any) }} />
+                  {asset.corretora}
+                </span>
               </div>
               <div className="text-sm text-muted-foreground mt-1">
                 {asset.quantidade} ações × R$ {asset.preco_medio.toFixed(2)}

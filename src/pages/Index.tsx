@@ -11,7 +11,8 @@ import { DebtsState } from "@/types/debt";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid } from "lucide-react";
+import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid, History, Trash2 } from "lucide-react";
+import { getBrokerColor } from "@/utils/brokerColors";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getHistoryWithDiff, recordPortfolioSnapshot, updateMonthValue, deleteMonth, addMonth, initializeWithUserData } from "@/services/portfolioHistory";
 // Removido import do util PDF
 
 const Index = () => {
@@ -30,6 +32,7 @@ const Index = () => {
   const [editingAsset, setEditingAsset] = useState<CalculatedAsset | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 9;
+  const [historyVersion, setHistoryVersion] = useState(0);
   
   // Filtros e ordenação
   const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
@@ -41,6 +44,7 @@ const Index = () => {
 
   // Carrega os ativos do arquivo ao montar o componente
   useEffect(() => {
+    initializeWithUserData(); // Inicializa histórico com dados da planilha se estiver vazio
     const loadInitialAssets = async () => {
       const loadedAssets = await loadAssets();
       setAssets(loadedAssets);
@@ -220,6 +224,7 @@ const Index = () => {
         dy_ponderado: dy_ponderado_local,
         pl_total: pl_total_local,
       });
+      try { recordPortfolioSnapshot(valor_total_carteira_local); setHistoryVersion(v => v + 1); } catch {}
       await saveAssets(assetsToUse);
 
       if (!silent) {
@@ -331,7 +336,7 @@ const Index = () => {
             <Tabs defaultValue="total" className="w-full">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-foreground">Resumo da Carteira</h2>
-                <TabsList className="grid grid-cols-4 w-auto">
+                <TabsList className="grid grid-cols-5 w-auto">
                   <TabsTrigger value="total">
                     <BarChart3 className="h-4 w-4 mr-2" />
                     Total
@@ -347,6 +352,10 @@ const Index = () => {
                   <TabsTrigger value="setor">
                     <LayoutGrid className="h-4 w-4 mr-2" />
                     Por Setor
+                  </TabsTrigger>
+                  <TabsTrigger value="historico">
+                    <History className="h-4 w-4 mr-2" />
+                    Histórico
                   </TabsTrigger>
                 </TabsList>
               </div>
@@ -416,6 +425,68 @@ const Index = () => {
                         Projeção anual ÷ 12 meses
                       </p>
                     </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="historico">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                      <Calendar className="h-5 w-5" /> Histórico mensal do patrimônio
+                    </h3>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { 
+                        const m = prompt('Mês (YYYY-MM):'); 
+                        const v = prompt('Valor (R$):'); 
+                        if (m && v) { addMonth(m, parseFloat(v.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
+                      }}>+ Adicionar mês</Button>
+                      <Button variant="outline" size="sm" onClick={() => { try { recordPortfolioSnapshot(summary.valor_total_carteira); setHistoryVersion(v => v + 1);} catch {} }}>Registrar mês atual</Button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto border border-border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left p-3">Mês</th>
+                          <th className="text-right p-3">Valor</th>
+                          <th className="text-right p-3">Diferença</th>
+                          <th className="text-right p-3">% M/M</th>
+                          <th className="text-center p-3">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {getHistoryWithDiff().map((row) => (
+                          <tr key={row.month} className="border-t border-border/60 hover:bg-muted/30">
+                            <td className="p-3">{row.month}</td>
+                            <td className="p-3 text-right">
+                              <button 
+                                className="hover:underline text-left w-full text-right"
+                                onClick={() => {
+                                  const newVal = prompt(`Editar valor de ${row.month}:`, row.value.toString());
+                                  if (newVal) { updateMonthValue(row.month, parseFloat(newVal.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
+                                }}
+                              >
+                                R$ {row.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </button>
+                            </td>
+                            <td className={`p-3 text-right ${row.diff && row.diff < 0 ? 'text-destructive' : 'text-success'}`}>{row.diff == null ? '—' : `R$ ${(row.diff >= 0 ? '+' : '')}${row.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                            <td className={`p-3 text-right ${row.diffPct && row.diffPct < 0 ? 'text-destructive' : 'text-success'}`}>{row.diffPct == null ? '—' : `${row.diffPct >= 0 ? '+' : ''}${row.diffPct.toFixed(2)}%`}</td>
+                            <td className="p-3 text-center">
+                              <Button variant="ghost" size="sm" onClick={() => { if(confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); }}} className="text-destructive hover:text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                        {getHistoryWithDiff().length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-4 text-center text-muted-foreground">Nenhum registro ainda. Clique em "+ Adicionar mês" ou "Registrar mês atual".</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </TabsContent>

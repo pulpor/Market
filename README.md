@@ -2,7 +2,9 @@
 
 Aplicação React + Vite + Tailwind que calcula e exibe sua carteira de ativos da B3 (alocação, DY e P/L da posição), usando Supabase Edge Functions para buscar cotações no Yahoo Finance. Em ambiente de desenvolvimento, há fallback automático para um mock local que funciona sem nenhuma configuração externa.
 
-**✨ Novidade:** Sistema de persistência local em arquivo JSON (privado, não vai pro Git).
+**✨ Novidade:**
+- IDs de ativos normalizados para UUID v4 (compatível com Supabase e entre dispositivos)
+- Persistência local opcional em `assets.json` (privado, não vai pro Git)
 
 ## Requisitos
 
@@ -25,6 +27,8 @@ VITE_SUPABASE_PUBLISHABLE_KEY="<sua-anon-key>"
 ```
 
 Sem essas variáveis, o app usa automaticamente o mock local (sem chamadas externas) e funciona normalmente para testes.
+
+Para deploy em produção (Vercel recomendado) e passos completos de Supabase (tabela, função e variáveis), veja `DEPLOY.md`.
 
 ### 3. Inicie o servidor de armazenamento local (em um terminal)
 

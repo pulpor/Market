@@ -88,6 +88,82 @@ app.get('/api/market/ibov', async (req, res) => {
   }
 });
 
+// Helpers para índices dos EUA
+async function fetchYahooIndex(symbol, name) {
+  // 1) Yahoo quote
+  try {
+    const enc = encodeURIComponent(symbol);
+    const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${enc}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const j = await r.json();
+    const it = j?.quoteResponse?.result?.[0] || {};
+    return {
+      name,
+      symbol,
+      price: Number(it?.regularMarketPrice ?? NaN),
+      changePct: Number(it?.regularMarketChangePercent ?? NaN),
+      currency: it?.currency || 'USD',
+      source: 'yahoo',
+      time: it?.regularMarketTime || null,
+    };
+  } catch {}
+
+  // 2) Yahoo chart fallback (deriva variação pelo previousClose)
+  try {
+    const enc = encodeURIComponent(symbol);
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${enc}?range=1d&interval=1m`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const j = await r.json();
+    const meta = j?.chart?.result?.[0]?.meta || {};
+    const price = Number(meta?.regularMarketPrice ?? NaN);
+    const prev = Number(meta?.previousClose ?? meta?.chartPreviousClose ?? NaN);
+    const changePct = Number.isFinite(price) && Number.isFinite(prev) && prev !== 0 ? ((price - prev) / prev) * 100 : null;
+    if (Number.isFinite(price)) {
+      return { name, symbol, price, changePct, currency: meta?.currency || 'USD', source: 'yahoo-chart', time: meta?.regularMarketTime || null };
+    }
+  } catch {}
+
+  // 3) Stooq CSV fallback (último fechamento válido)
+  try {
+    const map = { '^GSPC': '%5Espx', '^DJI': '%5Edji', '^NDX': '%5Endx' };
+    const q = map[symbol];
+    if (q) {
+      const r = await fetch(`https://stooq.com/q/d/l/?s=${q}&i=d`);
+      const txt = await r.text();
+      const lines = txt.split('\n').slice(1).filter(Boolean);
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const parts = lines[i].split(',');
+        const close = Number(parts?.[5] ?? NaN);
+        if (Number.isFinite(close)) {
+          return { name, symbol, price: close, changePct: null, currency: 'USD', source: 'stooq', time: parts?.[1] || null };
+        }
+      }
+    }
+  } catch {}
+
+  return { name, symbol, price: null, changePct: null, currency: 'USD', source: 'unavailable', time: null };
+}
+
+app.get('/api/market/sp500', async (req, res) => {
+  const result = await fetchYahooIndex('^GSPC', 'S&P 500');
+  if (result.price == null) return res.status(502).json(result);
+  return res.json(result);
+});
+
+app.get('/api/market/djia', async (req, res) => {
+  const result = await fetchYahooIndex('^DJI', 'Dow Jones');
+  if (result.price == null) return res.status(502).json(result);
+  return res.json(result);
+});
+
+app.get('/api/market/ndx', async (req, res) => {
+  const result = await fetchYahooIndex('^NDX', 'Nasdaq 100');
+  if (result.price == null) return res.status(502).json(result);
+  return res.json(result);
+});
+
 app.listen(PORT, () => {
   console.log(`🔒 Servidor de storage rodando em http://localhost:${PORT}`);
   console.log(`📁 Arquivo: ${ASSETS_FILE}`);

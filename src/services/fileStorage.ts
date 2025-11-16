@@ -1,5 +1,6 @@
 import { Asset } from "@/types/asset";
 import { supabase } from "@/lib/supabase";
+import { v4 as uuidv4, validate as uuidValidate, version as uuidVersion } from "uuid";
 // The generated Supabase types are currently empty (no tables declared),
 // which makes supabase.from<'assets'> types resolve to never. Use a local
 // untyped alias to avoid blocking builds while keeping a single client instance.
@@ -11,6 +12,8 @@ const LOCAL_STORAGE_KEY = "dashboard-b3-assets";
 // Detecta se está em produção (sem servidor local disponível)
 const isProduction = import.meta.env.PROD;
 const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+// Only use the local storage server when explicitly enabled
+const useLocalServer = !isProduction && import.meta.env.VITE_USE_LOCAL_STORAGE_SERVER === '1';
 
 /**
  * Carrega os ativos do usuário logado no Supabase (se configurado),
@@ -32,7 +35,7 @@ export async function loadAssets(): Promise<Asset[]> {
           console.error("❌ Erro ao carregar do Supabase:", error);
         } else if (Array.isArray(data) && data.length > 0) {
           console.log(`✅ ${data.length} ativo(s) carregado(s) do Supabase`);
-          return data.map(asset => ({
+          const list = data.map(asset => ({
             id: asset.id,
             ticker: asset.ticker,
             quantidade: asset.quantidade,
@@ -46,6 +49,12 @@ export async function loadAssets(): Promise<Asset[]> {
             data_aplicacao: (asset as any).data_aplicacao ?? undefined,
             valor_atual_rf: asset.valor_atual_rf ? parseFloat(asset.valor_atual_rf) : undefined,
           }));
+          // Dados do Supabase já devem ter UUIDs válidos; ainda assim, validamos por segurança
+          const fixed = list.map(a => (uuidValidate(a.id) && uuidVersion(a.id) === 4) ? a : { ...a, id: uuidv4() });
+          if (JSON.stringify(fixed) !== JSON.stringify(list)) {
+            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch {}
+          }
+          return fixed;
         } else {
           console.warn("ℹ️ Supabase retornou 0 ativos.");
         }
@@ -63,8 +72,16 @@ export async function loadAssets(): Promise<Asset[]> {
     if (data) {
       const assets = JSON.parse(data);
       if (Array.isArray(assets) && assets.length > 0) {
-        console.log(`✅ ${assets.length} ativo(s) carregado(s) do localStorage`);
-        return assets;
+        // Normaliza IDs caso o storage tenha valores antigos (timestamps etc.)
+        const fixed = assets.map((a: Asset) => {
+          const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
+          return ok ? a : { ...a, id: uuidv4() };
+        });
+        if (JSON.stringify(fixed) !== JSON.stringify(assets)) {
+          try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch {}
+        }
+        console.log(`✅ ${fixed.length} ativo(s) carregado(s) do localStorage`);
+        return fixed;
       }
     }
     console.log("ℹ️ Nenhum ativo salvo no localStorage.");
@@ -72,23 +89,33 @@ export async function loadAssets(): Promise<Asset[]> {
     console.error("❌ Erro ao carregar do localStorage:", error);
   }
 
-  // Tentativa 3: servidor local (mesmo com Supabase ativo, como último fallback)
-  try {
-    console.log("🔄 Carregando ativos do servidor local em", API_URL);
-    const response = await fetch(API_URL);
-    if (!response.ok) {
-      console.warn("❌ Erro ao carregar assets.json do servidor local.");
-    } else {
-      const data = await response.json();
-      console.log("📦 Dados recebidos do servidor:", data);
-      if (Array.isArray(data?.assets) && data.assets.length > 0) {
-        console.log(`✅ ${data.assets.length} ativo(s) carregado(s) do arquivo assets.json`);
-        return data.assets;
+  // Tentativa 3: servidor local (opcional; somente se explicitamente habilitado)
+  if (useLocalServer) {
+    try {
+      console.log("🔄 Carregando ativos do servidor local em", API_URL);
+      const response = await fetch(API_URL);
+      if (!response.ok) {
+        console.warn("❌ Erro ao carregar assets.json do servidor local.");
+      } else {
+        const data = await response.json();
+        console.log("📦 Dados recebidos do servidor:", data);
+        if (Array.isArray(data?.assets) && data.assets.length > 0) {
+          const arr: Asset[] = data.assets;
+          const fixed = arr.map((a: Asset) => {
+            const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
+            return ok ? a : { ...a, id: uuidv4() };
+          });
+          if (JSON.stringify(fixed) !== JSON.stringify(arr)) {
+            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch {}
+          }
+          console.log(`✅ ${fixed.length} ativo(s) carregado(s) do arquivo assets.json`);
+          return fixed;
+        }
+        console.log("ℹ️ Arquivo assets.json está vazio.");
       }
-      console.log("ℹ️ Arquivo assets.json está vazio.");
+    } catch (error) {
+      console.warn("⚠️ Servidor local não está acessível ou não está rodando (npm run storage)");
     }
-  } catch (error) {
-    console.warn("⚠️ Servidor local não está acessível ou não está rodando (npm run storage)");
   }
 
   // Sem dados em nenhum lugar
@@ -101,6 +128,21 @@ export async function loadAssets(): Promise<Asset[]> {
  */
 export async function saveAssets(assets: Asset[]): Promise<boolean> {
   let savedSomewhere = false;
+  // Garante que todos os IDs são UUID v4 antes de qualquer persistência
+  const normalizeIds = (list: Asset[]): { normalized: Asset[]; changed: boolean } => {
+    let changed = false;
+    const normalized = list.map((a) => {
+      const isV4 = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
+      if (!isV4) {
+        changed = true;
+        return { ...a, id: uuidv4() };
+      }
+      return a;
+    });
+    return { normalized, changed };
+  };
+
+  const { normalized: assetsWithUuid, changed: idsChanged } = normalizeIds(assets);
   
   // PROTEÇÃO 1: Backup automático no localStorage ANTES de qualquer operação
   const BACKUP_KEY = `${LOCAL_STORAGE_KEY}_backup`;
@@ -134,11 +176,11 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
         
         // ESTRATÉGIA SEGURA: UPSERT ao invés de DELETE+INSERT
         // Atualiza registros existentes OU insere novos, SEM deletar nada
-        if (assets.length > 0) {
+        if (assetsWithUuid.length > 0) {
           const { error: upsertError } = await sb
             .from('assets')
             .upsert(
-              assets.map(asset => ({
+              assetsWithUuid.map(asset => ({
                 id: asset.id,
                 user_id: user.id,
                 ticker: asset.ticker,
@@ -174,7 +216,7 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
               console.error('❌ Falha ao restaurar backup:', restoreError);
             }
           } else {
-            console.log(`✅ ${assets.length} ativo(s) salvos com sucesso no Supabase (UPSERT)`);
+            console.log(`✅ ${assetsWithUuid.length} ativo(s) salvos com sucesso no Supabase (UPSERT)`);
             savedSomewhere = true;
           }
         } else {
@@ -201,7 +243,9 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
   // 2) Sempre salva no localStorage como backup redundante
   if (isProduction || hasSupabase) {
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(assets));
+      // Se IDs foram normalizados, persistimos a versão normalizada para manter consistência entre dispositivos
+      const toPersist = idsChanged ? assetsWithUuid : assets;
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(toPersist));
       console.log(`✅ ${assets.length} ativo(s) salvo(s) no localStorage (backup redundante)`);
       savedSomewhere = true;
     } catch (error) {
@@ -209,17 +253,16 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
     }
   }
 
-  // 3) Fallback: Em desenvolvimento, salva no servidor local (opcional)
-  if (!isProduction) {
+  // 3) Fallback: Em desenvolvimento, salva no servidor local (somente se habilitado)
+  if (useLocalServer) {
     try {
       console.log(`💾 Salvando ${assets.length} ativo(s) no servidor local...`);
-      
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ assets }),
+        body: JSON.stringify({ assets: idsChanged ? assetsWithUuid : assets }),
       });
 
       if (!response.ok) {
@@ -229,16 +272,16 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
       console.log("✅ Ativos salvos no arquivo assets.json");
       savedSomewhere = true;
     } catch (error) {
-      console.warn("⚠️ Servidor local não disponível (opcional em produção)");
+      console.warn("⚠️ Servidor local não disponível (habilite com VITE_USE_LOCAL_STORAGE_SERVER=1)");
     }
   }
   
   // Log final do resultado
   if (savedSomewhere) {
     console.log(`\n📊 Resumo do salvamento (${new Date().toLocaleString('pt-BR')}):`);
-    console.log(`   Total de ativos: ${assets.length}`);
-    console.log(`   Renda Variável: ${assets.filter(a => !a.tipo_ativo_manual).length}`);
-    console.log(`   Renda Fixa: ${assets.filter(a => a.tipo_ativo_manual).length}`);
+    console.log(`   Total de ativos: ${(idsChanged ? assetsWithUuid : assets).length}`);
+    console.log(`   Renda Variável: ${(idsChanged ? assetsWithUuid : assets).filter(a => !a.tipo_ativo_manual).length}`);
+    console.log(`   Renda Fixa: ${(idsChanged ? assetsWithUuid : assets).filter(a => a.tipo_ativo_manual).length}`);
     console.log(`   Status: ✅ Salvo com sucesso\n`);
   } else {
     console.error('❌ FALHA: Não foi possível salvar em nenhum destino!');

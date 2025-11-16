@@ -1,5 +1,6 @@
 
 import { CalculatedAsset, Corretora } from "@/types/asset";
+import { BROKER_COLORS } from "@/utils/brokerColors";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from "recharts";
 import { formatBRL } from "@/utils/formatters";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,15 +10,8 @@ interface ChartsProps {
   assets: CalculatedAsset[];
 }
 
-// Paleta refinada com tons modernos e acessíveis em modo claro/escuro
-const COLORS: Record<Corretora, string> = {
-  Nubank: "#9B24D4",
-  XP: "#2D2D2D",
-  Itaú: "#FF7A1A",
-  Santander: "#FF2D2D",
-  BTG: "#003C8F",
-  Outros: "#7E8895",
-};
+// Cores por corretora centralizadas em utils/brokerColors
+const COLORS: Record<Corretora, string> = BROKER_COLORS;
 
 // Paleta categórica para TICKERS (independente da corretora)
 const TICKER_PALETTE: string[] = [

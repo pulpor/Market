@@ -145,7 +145,44 @@ export async function fetchAllIndicators(): Promise<Indicator[]> {
       }
     } catch {}
   }
-  // Fallback client-side
-  const [ibov, usd, btc] = await Promise.all([fetchIbovespa(), fetchUsdBrl(), fetchBtcBrl()]);
-  return [ibov, usd, btc];
+  // Fallback client-side: tentar via servidor local proxy (quando rodando `node server/storage-server.js`)
+  try {
+    const [ibovP, spP, djP, ndxP] = await Promise.allSettled([
+      fetch('http://localhost:3001/api/market/ibov'),
+      fetch('http://localhost:3001/api/market/sp500'),
+      fetch('http://localhost:3001/api/market/djia'),
+      fetch('http://localhost:3001/api/market/ndx'),
+    ]);
+
+    const results: Indicator[] = [];
+    if (ibovP.status === 'fulfilled' && ibovP.value.ok) {
+      const j = await ibovP.value.json();
+      results.push({ name: j.name, symbol: j.symbol, price: toNumber(j.price), changePct: toNumber(j.changePct), currency: j.currency, source: j.source, time: j.time ?? null });
+    } else {
+      results.push(await fetchIbovespa());
+    }
+    // USD e BTC de fontes públicas com CORS liberado
+    const [usd, btc] = await Promise.all([fetchUsdBrl(), fetchBtcBrl()]);
+    results.push(usd, btc);
+
+    const handleUs = async (resP: PromiseSettledResult<Response> | undefined, fallbackSymbol: string, fallbackName: string): Promise<Indicator> => {
+      if (resP && resP.status === 'fulfilled' && resP.value.ok) {
+        const j = await resP.value.json();
+        return { name: j.name, symbol: j.symbol, price: toNumber(j.price), changePct: toNumber(j.changePct), currency: j.currency, source: j.source, time: j.time ?? null };
+      }
+      // Sem proxy local, retorna placeholder
+      return { name: fallbackName, symbol: fallbackSymbol, price: null, changePct: null, currency: 'USD', source: 'unavailable', time: null };
+    };
+
+    const sp = await handleUs(spP, '^GSPC', 'S&P 500');
+    const dj = await handleUs(djP, '^DJI', 'Dow Jones');
+    const ndx = await handleUs(ndxP, '^NDX', 'Nasdaq 100');
+    results.push(sp, dj, ndx);
+
+    return results;
+  } catch {
+    // Último fallback: apenas o que temos com CORS público
+    const [ibov, usd, btc] = await Promise.all([fetchIbovespa(), fetchUsdBrl(), fetchBtcBrl()]);
+    return [ibov, usd, btc];
+  }
 }
