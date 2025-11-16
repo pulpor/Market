@@ -9,7 +9,17 @@ export interface Indicator {
   time: string | null;
 }
 
-function toNumber(v: any): number | null {
+interface RawIndicator {
+  name: string;
+  symbol: string;
+  price: unknown;
+  changePct: unknown;
+  currency?: string;
+  source: string;
+  time?: string | number | null;
+}
+
+function toNumber(v: unknown): number | null {
   const n = typeof v === 'string' ? parseFloat(v) : (typeof v === 'number' ? v : NaN);
   return Number.isFinite(n) ? n : null;
 }
@@ -52,25 +62,92 @@ export async function fetchBtcBrl(): Promise<Indicator> {
   }
 }
 
-export async function fetchIbovespa(): Promise<Indicator> {
-  // Consulta direta ao brapi (pode exigir token e falhar por CORS; é apenas fallback do fallback)
+async function fetchFromBrapi(brapiSymbol: string, displaySymbol: string, name: string, currency: string = 'USD'): Promise<Indicator> {
   try {
-    const url = 'https://brapi.dev/api/quote/%5EBVSP';
+    const url = `https://brapi.dev/api/quote/${encodeURIComponent(brapiSymbol)}`;
     const res = await fetch(url);
     const json = await res.json();
     const it = json?.results?.[0] || {};
-    return {
-      name: it?.shortName || 'Ibovespa',
-      symbol: 'IBOV',
-      price: toNumber(it?.regularMarketPrice),
-      changePct: toNumber(it?.regularMarketChangePercent),
-      currency: 'BRL',
-      source: 'brapi',
-      time: it?.regularMarketTime || null,
-    };
-  } catch {}
+    const price = toNumber(it?.regularMarketPrice);
+    if (price != null) {
+      return {
+        name: it?.shortName || name,
+        symbol: displaySymbol,
+        price,
+        changePct: toNumber(it?.regularMarketChangePercent),
+        currency: it?.currency || currency,
+        source: 'brapi',
+        time: it?.regularMarketTime || null,
+      };
+    }
+  } catch {
+    // Fallback to unavailable if brapi fails
+  }
+  return { name, symbol: displaySymbol, price: null, changePct: null, currency, source: 'unavailable', time: null };
+}
 
-  return { name: 'Ibovespa', symbol: 'IBOV', price: null, changePct: null, currency: 'BRL', source: 'unavailable', time: null };
+async function fetchFromStooq(stooqSymbol: string, displaySymbol: string, name: string, currency: string = 'USD'): Promise<Indicator> {
+  try {
+    const res = await fetch(`https://stooq.com/q/d/l/?s=${stooqSymbol}&i=d`);
+    const txt = await res.text();
+    // Format: Symbol,Date,Open,High,Low,Close,Volume
+    // Example: ^BVSP,2025-11-12,129000.00,130000.00,128500.00,129500.00,12345678
+    const lines = txt.split('\n').slice(1).filter(Boolean);
+    // Busca o último valor válido (ignora N/D)
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const parts = lines[i].split(',');
+      const close = toNumber(parts?.[5]);
+      if (close != null) {
+        return {
+          name,
+          symbol: displaySymbol,
+          price: close,
+          changePct: null,
+          currency,
+          source: 'stooq',
+          time: parts?.[1] || null,
+        };
+      }
+    }
+  } catch {
+    // Fallback to unavailable if stooq fails
+  }
+  return { name, symbol: displaySymbol, price: null, changePct: null, currency, source: 'unavailable', time: null };
+}
+
+async function fetchIndexWithFallback(brapiSymbol: string, displaySymbol: string, name: string, stooqSymbol: string, currency: string = 'USD'): Promise<Indicator> {
+  // 1) Try brapi first (supports multiple indices including US)
+  console.log(`[fetchIndexWithFallback] ${name}: brapi=${brapiSymbol}, display=${displaySymbol}`);
+  const brapiResult = await fetchFromBrapi(brapiSymbol, displaySymbol, name, currency);
+  if (brapiResult.price != null) {
+    console.log(`[fetchIndexWithFallback] ${name}: brapi success, symbol=${brapiResult.symbol}, price=${brapiResult.price}`);
+    return brapiResult;
+  }
+  
+  // 2) Fallback to Stooq
+  console.log(`[fetchIndexWithFallback] ${name}: brapi failed, trying Stooq`);
+  const stooqResult = await fetchFromStooq(stooqSymbol, displaySymbol, name, currency);
+  console.log(`[fetchIndexWithFallback] ${name}: stooq result, symbol=${stooqResult.symbol}, price=${stooqResult.price}`);
+  return stooqResult;
+}
+
+// Symbol mapping for market indices:
+// - brapi.dev API expects Yahoo Finance tickers (^BVSP, ^GSPC, etc.)
+// - MarketBar component expects display symbols (IBOV, ^GSPC, etc.)
+export async function fetchIbovespa(): Promise<Indicator> {
+  return fetchIndexWithFallback('^BVSP', 'IBOV', 'Ibovespa', '%5Ebvsp', 'BRL');
+}
+
+export async function fetchSP500(): Promise<Indicator> {
+  return fetchIndexWithFallback('^GSPC', '^GSPC', 'S&P 500', '%5Espx', 'USD');
+}
+
+export async function fetchDowJones(): Promise<Indicator> {
+  return fetchIndexWithFallback('^DJI', '^DJI', 'Dow Jones', '%5Edji', 'USD');
+}
+
+export async function fetchNasdaq(): Promise<Indicator> {
+  return fetchIndexWithFallback('^NDX', '^NDX', 'Nasdaq 100', '%5Endx', 'USD');
 }
 
 export async function fetchAllIndicators(): Promise<Indicator[]> {
@@ -93,24 +170,28 @@ export async function fetchAllIndicators(): Promise<Indicator[]> {
       if (res.ok) {
         const json = await res.json();
         const arr = Array.isArray(json?.indicators) ? json.indicators : [];
-        return arr.map((x: any) => ({
+        return arr.map((x: RawIndicator) => ({
           name: x.name, symbol: x.symbol, price: toNumber(x.price), changePct: toNumber(x.changePct), currency: x.currency, source: x.source, time: x.time ?? null,
         }));
       }
-    } catch {}
+    } catch {
+      // Ignore errors and try next method
+    }
 
     try {
       const { data, error } = await supabase.functions.invoke('market-indicators', {
         // prevent cached responses during dev
         headers: { 'cache-control': 'no-cache' },
       });
-      if (!error && data && Array.isArray((data as any).indicators)) {
-        const arr = (data as any).indicators;
-        return arr.map((x: any) => ({
+      if (!error && data && Array.isArray((data as {indicators?: RawIndicator[]}).indicators)) {
+        const arr = (data as {indicators: RawIndicator[]}).indicators;
+        return arr.map((x: RawIndicator) => ({
           name: x.name, symbol: x.symbol, price: toNumber(x.price), changePct: toNumber(x.changePct), currency: x.currency, source: x.source, time: x.time ?? null,
         }));
       }
-    } catch {}
+    } catch {
+      // Ignore errors and try next method
+    }
 
     // 1c) Manual call to functions domain WITH headers as a fallback
     try {
@@ -139,13 +220,25 @@ export async function fetchAllIndicators(): Promise<Indicator[]> {
         const json = await res.json();
         const arr = Array.isArray(json?.indicators) ? json.indicators : [];
         // Normaliza tipos
-        return arr.map((x: any) => ({
+        return arr.map((x: RawIndicator) => ({
           name: x.name, symbol: x.symbol, price: toNumber(x.price), changePct: toNumber(x.changePct), currency: x.currency, source: x.source, time: x.time ?? null,
         }));
       }
-    } catch {}
+    } catch {
+      // Ignore errors, will use client-side fallback
+    }
   }
   // Fallback client-side
-  const [ibov, usd, btc] = await Promise.all([fetchIbovespa(), fetchUsdBrl(), fetchBtcBrl()]);
-  return [ibov, usd, btc];
+  console.log('[fetchAllIndicators] Using client-side fallback...');
+  const [ibov, usd, btc, sp500, dowJones, nasdaq] = await Promise.all([
+    fetchIbovespa(),
+    fetchUsdBrl(),
+    fetchBtcBrl(),
+    fetchSP500(),
+    fetchDowJones(),
+    fetchNasdaq(),
+  ]);
+  const result = [ibov, usd, btc, sp500, dowJones, nasdaq];
+  console.log('[fetchAllIndicators] Result:', result.map(r => ({ symbol: r.symbol, price: r.price, source: r.source })));
+  return result;
 }
