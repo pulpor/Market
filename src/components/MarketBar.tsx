@@ -62,26 +62,38 @@ export function MarketBar() {
   const loadFallback = async () => {
     setLoading(true);
     try {
-      // 1) Tentar snapshot do collector local (sem SSE)
-      const res = await fetch(`${COLLECTOR_URL}/api/market/snapshot`, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        const list: MarketUpdate[] = Array.isArray(json?.data) ? json.data : [];
-        if (list.length) {
-          const mapped: Indicator[] = list.map((item) => ({
-            name: getIndicatorName(item.symbol),
-            symbol: symbolMap[item.symbol] || item.symbol,
-            price: item.price,
-            changePct: item.pctChange,
-            currency: getCurrency(item.symbol),
-            source: 'snapshot',
-            time: new Date(item.timestamp).toISOString(),
-          }));
-          setData(mapped);
-          return;
+      // 1) Tentar snapshot do collector local (sem SSE) - apenas em dev ou se URL não for localhost
+      const isLocalCollector = COLLECTOR_URL.includes('localhost') || COLLECTOR_URL.includes('127.0.0.1');
+      const isDev = import.meta.env.DEV;
+      
+      if (isDev || !isLocalCollector) {
+        const res = await fetch(`${COLLECTOR_URL}/api/market/snapshot`, { 
+          cache: 'no-store',
+          signal: AbortSignal.timeout(3000) // timeout de 3s
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const list: MarketUpdate[] = Array.isArray(json?.data) ? json.data : [];
+          if (list.length) {
+            const mapped: Indicator[] = list.map((item) => ({
+              name: getIndicatorName(item.symbol),
+              symbol: symbolMap[item.symbol] || item.symbol,
+              price: item.price,
+              changePct: item.pctChange,
+              currency: getCurrency(item.symbol),
+              source: 'snapshot',
+              time: new Date(item.timestamp).toISOString(),
+            }));
+            setData(mapped);
+            setLoading(false);
+            return;
+          }
         }
       }
-    } catch {}
+    } catch (err) {
+      // Em produção com localhost, pula direto para REST
+      console.log('Collector não disponível, usando REST fallback');
+    }
 
     try {
       // 2) Fallback REST de fontes públicas / Supabase function
@@ -96,6 +108,17 @@ export function MarketBar() {
   useEffect(() => {
     if (!USE_REALTIME) {
       // Modo fallback: polling REST a cada 60s
+      loadFallback();
+      const id = setInterval(loadFallback, 60_000);
+      return () => clearInterval(id);
+    }
+
+    // Em produção com localhost, pula direto para fallback
+    const isLocalCollector = COLLECTOR_URL.includes('localhost') || COLLECTOR_URL.includes('127.0.0.1');
+    const isProd = import.meta.env.PROD;
+    
+    if (isProd && isLocalCollector) {
+      console.log('⚠️ Produção detectada com collector localhost, usando REST fallback');
       loadFallback();
       const id = setInterval(loadFallback, 60_000);
       return () => clearInterval(id);
