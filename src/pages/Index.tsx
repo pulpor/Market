@@ -12,7 +12,7 @@ import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
 import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid, History, Trash2 } from "lucide-react";
-import { getBrokerColor } from "@/utils/brokerColors";
+import { getBrokerColor, BROKER_LIST } from "@/utils/brokerColors";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,8 @@ const Index = () => {
   
   // Filtros e ordenação
   const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
+  const KNOWN_BROKERS = useMemo(() => new Set(BROKER_LIST as readonly string[]), []);
+  const normalizeBroker = useCallback((b: string): Corretora => (KNOWN_BROKERS.has(b) ? (b as Corretora) : 'Outros'), [KNOWN_BROKERS]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortKey, setSortKey] = useState<
     "valor_total" | "dividend_yield" | "quantidade" | "preco_atual" | "variacao_percentual" | "pl_posicao"
@@ -254,7 +256,7 @@ const Index = () => {
     // Filtro por corretora
     let filtered = brokerFilter === "Todas"
       ? calculatedAssets
-      : calculatedAssets.filter(a => a.corretora === brokerFilter);
+      : calculatedAssets.filter(a => normalizeBroker(a.corretora) === brokerFilter);
 
     // Filtro por busca de nome
     if (searchQuery.trim()) {
@@ -493,8 +495,8 @@ const Index = () => {
 
               <TabsContent value="corretora">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  {Array.from(new Set(calculatedAssets.map(a => a.corretora))).map(corretora => {
-                    const assetsCorretora = calculatedAssets.filter(a => a.corretora === corretora);
+                  {BROKER_LIST.map(corretora => {
+                    const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
                     const valorTotal = assetsCorretora.reduce((sum, a) => sum + a.valor_total, 0);
                     const dyPonderado = assetsCorretora.reduce((sum, a) => {
                       const participacao = a.valor_total / valorTotal;
@@ -549,8 +551,8 @@ const Index = () => {
                     Previsão de Dividendos
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Array.from(new Set(calculatedAssets.map(a => a.corretora))).map(corretora => {
-                      const assetsCorretora = calculatedAssets.filter(a => a.corretora === corretora);
+                    {BROKER_LIST.map(corretora => {
+                      const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
                       const projecaoAnual = assetsCorretora.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
                       const projecaoMensal = projecaoAnual / 12;
                       
@@ -806,12 +808,9 @@ const Index = () => {
                     <SelectTrigger className="min-w-[120px]"><SelectValue placeholder="Todas" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Todas">Todas</SelectItem>
-                      <SelectItem value="Nubank">Nubank</SelectItem>
-                      <SelectItem value="XP">XP</SelectItem>
-                      <SelectItem value="Itaú">Itaú</SelectItem>
-                      <SelectItem value="Santander">Santander</SelectItem>
-                      <SelectItem value="BTG">BTG</SelectItem>
-                      <SelectItem value="Outros">Outros</SelectItem>
+                      {BROKER_LIST.map(b => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

@@ -5,6 +5,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { formatCurrency, formatPercent } from "@/utils/formatters";
+import { getBrokerColor } from "@/utils/brokerColors";
+import { Corretora } from "@/types/asset";
 
 interface AssetCardProps {
   asset: CalculatedAsset;
@@ -12,30 +14,32 @@ interface AssetCardProps {
   onEdit?: (asset: CalculatedAsset) => void;
 }
 
-const getGradientClass = (corretora: string): string => {
-  const gradients: Record<string, string> = {
-    Nubank: "bg-gradient-to-br from-nubank-start to-nubank-end",
-    XP: "bg-gradient-to-br from-xp-start to-xp-end",
-    Inco: "bg-gradient-to-br from-other-start to-other-end",
-    Clear: "bg-gradient-to-br from-other-start to-other-end",
-    Sofisa: "bg-gradient-to-br from-other-start to-other-end",
-    "Grão": "bg-gradient-to-br from-other-start to-other-end",
-    Inter: "bg-gradient-to-br from-other-start to-other-end",
-    Nomad: "bg-gradient-to-br from-other-start to-other-end",
-    Genial: "bg-gradient-to-br from-other-start to-other-end",
-    Binance: "bg-gradient-to-br from-other-start to-other-end",
-    Itaú: "bg-gradient-to-br from-other-start to-other-end",
-    Santander: "bg-gradient-to-br from-other-start to-other-end",
-    BTG: "bg-gradient-to-br from-other-start to-other-end",
-    Outros: "bg-gradient-to-br from-other-start to-other-end",
+const getCardStyle = (corretora: string): React.CSSProperties => {
+  const baseColor = getBrokerColor(corretora as Corretora);
+  
+  // Escurece a cor base para aumentar o contraste com o texto
+  const darkenColor = (hex: string, percent: number): string => {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = Math.max(0, ((num >> 16) & 0xFF) * (1 - percent));
+    const g = Math.max(0, ((num >> 8) & 0xFF) * (1 - percent));
+    const b = Math.max(0, (num & 0xFF) * (1 - percent));
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
   };
-  return gradients[corretora] || gradients.Outros;
+
+  const gradStart = darkenColor(baseColor, 0.35);
+  const gradEnd = darkenColor(baseColor, 0.65);
+
+  return {
+    // Overlay sutil escuro + gradiente da corretora escurecido
+    backgroundImage: `linear-gradient(rgba(0,0,0,0.18), rgba(0,0,0,0.18)), linear-gradient(135deg, ${gradStart} 0%, ${gradEnd} 100%)`,
+    color: '#fff',
+  };
 };
 
 export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const isPositive = asset.variacao_percentual >= 0;
-  const gradientClass = getGradientClass(asset.corretora);
+  const cardStyle = getCardStyle(asset.corretora);
   
   // Detecta se é Renda Fixa
   const isRendaFixa = !!asset.tipo_ativo_manual;
@@ -75,7 +79,10 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
     };
 
   return (
-    <div className={`${gradientClass} rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative group`}>
+    <div 
+      style={cardStyle}
+      className="rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative group"
+    >
       {/* Botões de ação */}
       <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
         {onEdit && (

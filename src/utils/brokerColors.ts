@@ -8,12 +8,27 @@ export const BROKER_COLORS: Record<Corretora, string> = {
   Sofisa: "#C9A227",          // dourado
   "Grão": "#A3E635",         // verde lima
   Inter: "#FF7A00",           // laranja Inter
-  Nomad: "#B38F00",           // amarelo escuro
+  Nomad: "#D4AF37",           // dourado metálico (mais claro que Binance)
   Genial: "#0F2B6B",          // azul escuro
-  Binance: "#F0B90B",         // amarelo dourado escuro
+  Binance: "#F3A701",         // amarelo Binance (mais vibrante)
   Outros: "#7E8895",          // cinza
 };
 
 export function getBrokerColor(name: Corretora): string {
   return BROKER_COLORS[name] || BROKER_COLORS["Outros"];
 }
+
+// Lista canônica e ordenada de corretoras para formularios e filtros
+export const BROKER_LIST: Corretora[] = [
+  "Nubank",
+  "Inco",
+  "XP",
+  "Clear",
+  "Sofisa",
+  "Grão",
+  "Inter",
+  "Nomad",
+  "Genial",
+  "Binance",
+  "Outros",
+];

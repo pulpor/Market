@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Asset, Corretora, CalculatedAsset } from "@/types/asset";
+import { BROKER_LIST } from "@/utils/brokerColors";
 import { Calculator, TrendingUp, Landmark } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -16,19 +17,6 @@ interface AssetFormProps {
   onCancelEdit?: () => void;
 }
 
-const corretoras: Corretora[] = [
-  "Nubank",
-  "Inco",
-  "XP",
-  "Clear",
-  "Sofisa",
-  "Grão",
-  "Inter",
-  "Nomad",
-  "Genial",
-  "Binance",
-  "Outros",
-];
 const tiposRendaFixa = ["Previdência", "Tesouro Direto", "CDB", "LCI/LCA", "Debêntures", "Outros"] as const;
 const indicesReferencia = ["CDI", "IPCA", "Pré-fixado", "Selic", "IGP-M", "Outros"] as const;
 
@@ -237,7 +225,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {corretoras.map((c) => (
+                  {BROKER_LIST.map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>
@@ -361,7 +349,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {corretoras.map((c) => (
+                  {BROKER_LIST.map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>

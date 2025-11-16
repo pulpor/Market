@@ -1,6 +1,6 @@
 
 import { CalculatedAsset, Corretora } from "@/types/asset";
-import { BROKER_COLORS } from "@/utils/brokerColors";
+import { BROKER_COLORS, BROKER_LIST } from "@/utils/brokerColors";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from "recharts";
 import { formatBRL } from "@/utils/formatters";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,6 +12,10 @@ interface ChartsProps {
 
 // Cores por corretora centralizadas em utils/brokerColors
 const COLORS: Record<Corretora, string> = BROKER_COLORS;
+
+// Normaliza nomes de corretora que não estejam no conjunto conhecido
+const KNOWN_BROKERS = new Set(Object.keys(BROKER_COLORS) as Array<Corretora>);
+const normalizeBroker = (b: string): Corretora => (KNOWN_BROKERS.has(b as Corretora) ? (b as Corretora) : 'Outros');
 
 // Paleta categórica para TICKERS (independente da corretora)
 const TICKER_PALETTE: string[] = [
@@ -57,10 +61,11 @@ export function Charts({ assets }: ChartsProps) {
     return 'Outro';
   };
   
-  // Filtra os ativos pela corretora selecionada
+  // Normaliza corretoras e filtra os ativos
+  const normalizedAssets = assets.map(a => ({ ...a, corretora: normalizeBroker(a.corretora) }));
   const filteredAssets = selectedBroker === "Todas" 
-    ? assets 
-    : assets.filter(a => a.corretora === selectedBroker);
+    ? normalizedAssets 
+    : normalizedAssets.filter(a => a.corretora === selectedBroker);
   
   // Dados para pizza de alocação por ticker (usando ativos filtrados)
   const tickerData = filteredAssets.map((asset, i) => ({
@@ -69,9 +74,9 @@ export function Charts({ assets }: ChartsProps) {
     color: TICKER_PALETTE[i % TICKER_PALETTE.length],
   }));
 
-  // Dados para pizza de alocação por corretora
+  // Dados para pizza de alocação por corretora (apenas corretoras presentes nos assets atuais)
   const corretoraMap = new Map<Corretora, number>();
-  assets.forEach((asset) => {
+  normalizedAssets.forEach((asset) => {
     const current = corretoraMap.get(asset.corretora) || 0;
     corretoraMap.set(asset.corretora, current + asset.valor_total);
   });
@@ -133,7 +138,8 @@ export function Charts({ assets }: ChartsProps) {
   const corretoraLegend = buildLegend(corretoraData);
   
   // Lista de corretoras disponíveis para o filtro
-  const availableBrokers = Array.from(new Set(assets.map(a => a.corretora))).sort();
+  // Opções de filtro fixas e canônicas (mesmas do formulário)
+  const availableBrokers = BROKER_LIST;
 
   // Dados para pizza de alocação por tipo de ativo (Ação, FII, ETF)
   const tipoAtivoMap = new Map<string, number>();
@@ -252,8 +258,8 @@ export function Charts({ assets }: ChartsProps) {
           </div>
           <div className="md:w-56 w-full max-h-[280px] overflow-auto pr-1">
             <ul className="space-y-2">
-              {tickerLegend.map((item) => (
-                <li key={item.name} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
+              {tickerLegend.map((item, idx) => (
+                <li key={`ticker-${idx}`} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
                     <span className="truncate text-foreground/80">{item.name}</span>
@@ -301,8 +307,8 @@ export function Charts({ assets }: ChartsProps) {
           </div>
           <div className="md:w-56 w-full max-h-[280px] overflow-auto pr-1">
             <ul className="space-y-2">
-              {corretoraLegend.map((item) => (
-                <li key={item.name} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
+              {corretoraLegend.map((item, idx) => (
+                <li key={`corretora-${idx}`} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
                     <span className="truncate text-foreground/80">{item.name}</span>
@@ -396,8 +402,8 @@ export function Charts({ assets }: ChartsProps) {
           </div>
           <div className="md:w-56 w-full max-h-[280px] overflow-auto pr-1">
             <ul className="space-y-2">
-              {tipoAtivoLegend.map((item) => (
-                <li key={item.name} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
+              {tipoAtivoLegend.map((item, idx) => (
+                <li key={`tipo-${idx}`} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
                     <span className="truncate text-foreground/80">{item.name}</span>
@@ -445,8 +451,8 @@ export function Charts({ assets }: ChartsProps) {
           </div>
           <div className="md:w-56 w-full max-h-[280px] overflow-auto pr-1">
             <ul className="space-y-2">
-              {setorLegend.map((item) => (
-                <li key={item.name} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
+              {setorLegend.map((item, idx) => (
+                <li key={`setor-${idx}`} className="flex items-center justify-between text-sm" style={{ fontFamily: LABEL_FONT }}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
                     <span className="truncate text-foreground/80">{item.name}</span>
