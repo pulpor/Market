@@ -78,45 +78,11 @@ export function MarketBar() {
     }
   })();
 
-  // Fallback: tenta snapshot do collector; se falhar, usa REST comum
+  // Carrega indicadores via REST
   const loadFallback = async () => {
     setLoading(true);
     try {
-      // 1) Tentar snapshot do collector (somente quando URL é válida e não-local em produção)
-      if (isUsableCollector) {
-        const res = await fetch(`${COLLECTOR_URL}/api/market/snapshot`, { 
-          cache: 'no-store',
-          signal: AbortSignal.timeout(3000) // timeout de 3s
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const list: MarketUpdate[] = Array.isArray(json?.data) ? json.data : [];
-          if (list.length) {
-            const mapped: Indicator[] = list.map((item) => ({
-              name: getIndicatorName(item.symbol),
-              symbol: symbolMap[item.symbol] || item.symbol,
-              price: item.price,
-              changePct: item.pctChange,
-              currency: getCurrency(item.symbol),
-              source: 'snapshot',
-              time: new Date(item.timestamp).toISOString(),
-            }));
-            setData(mapped);
-            setLoading(false);
-            return;
-          }
-        }
-      }
-    } catch (err) {
-      // Collector indisponível ou inválido, usar REST
-      console.log('Collector não disponível, usando REST fallback');
-    }
-
-    try {
-      // 2) Fallback REST de fontes públicas / Supabase function
-      console.log('📊 MarketBar: Chamando fetchAllIndicators...');
       const out = await fetchAllIndicators();
-      console.log('📊 MarketBar: Recebido', out.length, 'indicadores:', out.map(i => `${i.symbol}=${i.price}`));
       setData(out);
     } catch (err) {
       console.error('❌ MarketBar: Erro ao buscar indicadores:', err);
@@ -125,148 +91,18 @@ export function MarketBar() {
     }
   };
 
-  // SSE: conecta ao collector e recebe updates em tempo real
+  // Carrega indicadores no mount
   useEffect(() => {
-    if (!USE_REALTIME) {
-      // Modo fallback: polling REST a cada 60s
-      loadFallback();
-      const id = setInterval(loadFallback, 60_000);
-      return () => clearInterval(id);
-    }
-
-    // Em produção com collector inválido ou local, pula direto para fallback
-    if (!isUsableCollector) {
-      console.log('⚠️ Produção detectada com collector localhost, usando REST fallback');
-      loadFallback();
-      const id = setInterval(loadFallback, 60_000);
-      return () => clearInterval(id);
-    }
-
-    // Modo real-time: Server-Sent Events (SSE)
-    console.log('🔌 Connecting to SSE stream:', `${COLLECTOR_URL}/api/market/stream`);
-    
-    const eventSource = new EventSource(`${COLLECTOR_URL}/api/market/stream`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onopen = () => {
-      console.log('✅ SSE connection established');
-      setConnected(true);
-      setLoading(false);
-    };
-
-    eventSource.onerror = (error) => {
-      console.error('❌ SSE error:', error);
-      setConnected(false);
-      
-      // Fallback para REST (sem reload!)
-      loadFallback();
-      
-      // Fechar conexão SSE quebrada
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
-
-    eventSource.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        
-        // Snapshot inicial
-        if (message.type === 'snapshot' && Array.isArray(message.data)) {
-          console.log('📸 Received snapshot:', message.data.length, 'symbols');
-          
-          const indicators: Indicator[] = message.data.map((item: MarketUpdate) => ({
-            name: getIndicatorName(item.symbol),
-            symbol: symbolMap[item.symbol] || item.symbol,
-            price: item.price,
-            changePct: item.pctChange,
-            currency: getCurrency(item.symbol),
-            source: 'real-time',
-            time: new Date(item.timestamp).toISOString(),
-          }));
-          
-          setData(indicators);
-          setLoading(false);
-          return;
-        }
-        
-        // Update individual
-        if (message.symbol) {
-          const update = message as MarketUpdate;
-          const frontendSymbol = symbolMap[update.symbol] || update.symbol;
-          
-          setData(prev => {
-            if (!prev) return prev;
-            
-            const index = prev.findIndex(item => item.symbol === frontendSymbol);
-            
-            if (index >= 0) {
-              const current = prev[index];
-              // Throttle: só atualiza se preço mudou mais que 0.01% (evita flicker)
-              const priceDiff = current.price ? Math.abs((update.price - current.price) / current.price) * 100 : 999;
-              if (priceDiff < 0.01 && current.price) {
-                return prev; // Ignora micro-variações
-              }
-              
-              const updated = [...prev];
-              updated[index] = {
-                ...updated[index],
-                price: update.price,
-                changePct: update.pctChange,
-                time: new Date(update.timestamp).toISOString(),
-              };
-              return updated;
-            }
-            
-            // Adicionar símbolo novo se não existir
-            return [...prev, {
-              name: getIndicatorName(message.symbol),
-              symbol: frontendSymbol,
-              price: update.price,
-              changePct: update.pctChange,
-              currency: getCurrency(message.symbol),
-              source: 'real-time',
-              time: new Date(update.timestamp).toISOString(),
-            }];
-          });
-        }
-      } catch (error) {
-        console.error('❌ SSE message parse error:', error);
-      }
-    };
-
-    return () => {
-      console.log('🔌 Disconnecting from SSE stream');
-      eventSource.close();
-    };
+    loadFallback();
+    // Atualiza a cada 60 segundos
+    const id = setInterval(loadFallback, 60_000);
+    return () => clearInterval(id);
   }, []);
 
   // (helpers movidos para o topo para reutilizar no fallback)
 
   return (
     <div className="bg-card border border-border rounded-xl p-4">
-      {/* Status de conexão real-time */}
-      {USE_REALTIME && (
-        <div className="flex items-center gap-2 mb-3 text-xs">
-          {connected ? (
-            <>
-              <Wifi className="h-3 w-3 text-green-500" />
-              <span className="text-green-600 dark:text-green-400 font-medium">Ao vivo</span>
-              <span className="text-muted-foreground">• Dados atualizados em tempo real</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-3 w-3 text-yellow-500" />
-              <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                {loading ? 'Conectando...' : 'Modo offline'}
-              </span>
-              <span className="text-muted-foreground">• Usando dados em cache</span>
-            </>
-          )}
-        </div>
-      )}
-      
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {(() => {
           const order: Array<[string, string, string]> = [
@@ -293,19 +129,12 @@ export function MarketBar() {
                   </div>
                 </div>
                 <p className="text-lg font-bold mt-1 text-foreground">{fmtMoney(d.price ?? null, d.currency)}</p>
-                
-                {/* Pulse animation quando conectado em real-time */}
-                {USE_REALTIME && connected && d.price !== null && (
-                  <div className="absolute top-1 right-1">
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-                  </div>
-                )}
               </div>
             );
           });
         })()}
       </div>
-      {loading && !USE_REALTIME && (
+      {loading && (
         <p className="text-xs text-muted-foreground mt-2">Atualizando cotações...</p>
       )}
     </div>
