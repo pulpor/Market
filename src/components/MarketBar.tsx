@@ -22,7 +22,10 @@ interface MarketUpdate {
   timestamp: number;
 }
 
-const COLLECTOR_URL = import.meta.env.VITE_COLLECTOR_URL || 'http://localhost:3002';
+// Raw env value (undefined if not provided). We only use the collector
+// when the env var is explicitly set to avoid noisy dev errors.
+const RAW_COLLECTOR_URL: string | undefined = import.meta.env.VITE_COLLECTOR_URL as any;
+const COLLECTOR_URL = RAW_COLLECTOR_URL || 'http://localhost:3002';
 const USE_REALTIME = import.meta.env.VITE_USE_REALTIME === '1';
 
 // Mapeamento de símbolos do backend real-time para os do frontend
@@ -58,15 +61,29 @@ export function MarketBar() {
   const [connected, setConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // Determina se a URL do collector é utilizável (remota e válida)
+  const isUsableCollector = (() => {
+    // Only consider using collector if the env var was explicitly set.
+    if (!RAW_COLLECTOR_URL) return false;
+    try {
+      const u = new URL(COLLECTOR_URL);
+      const isHttp = u.protocol === 'http:' || u.protocol === 'https:';
+      const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(u.hostname);
+      if (!isHttp) return false;
+      if (import.meta.env.PROD && isLocalHost) return false; // nunca usar localhost em prod
+      return !!u.hostname;
+    } catch {
+      // URL inválida (ex: ":3002"). Em prod, nunca usar; em dev, também ignorar para evitar erros.
+      return false;
+    }
+  })();
+
   // Fallback: tenta snapshot do collector; se falhar, usa REST comum
   const loadFallback = async () => {
     setLoading(true);
     try {
-      // 1) Tentar snapshot do collector local (sem SSE) - apenas em dev ou se URL não for localhost
-      const isLocalCollector = COLLECTOR_URL.includes('localhost') || COLLECTOR_URL.includes('127.0.0.1');
-      const isDev = import.meta.env.DEV;
-      
-      if (isDev || !isLocalCollector) {
+      // 1) Tentar snapshot do collector (somente quando URL é válida e não-local em produção)
+      if (isUsableCollector) {
         const res = await fetch(`${COLLECTOR_URL}/api/market/snapshot`, { 
           cache: 'no-store',
           signal: AbortSignal.timeout(3000) // timeout de 3s
@@ -91,14 +108,18 @@ export function MarketBar() {
         }
       }
     } catch (err) {
-      // Em produção com localhost, pula direto para REST
+      // Collector indisponível ou inválido, usar REST
       console.log('Collector não disponível, usando REST fallback');
     }
 
     try {
       // 2) Fallback REST de fontes públicas / Supabase function
+      console.log('📊 MarketBar: Chamando fetchAllIndicators...');
       const out = await fetchAllIndicators();
+      console.log('📊 MarketBar: Recebido', out.length, 'indicadores:', out.map(i => `${i.symbol}=${i.price}`));
       setData(out);
+    } catch (err) {
+      console.error('❌ MarketBar: Erro ao buscar indicadores:', err);
     } finally {
       setLoading(false);
     }
@@ -113,11 +134,8 @@ export function MarketBar() {
       return () => clearInterval(id);
     }
 
-    // Em produção com localhost, pula direto para fallback
-    const isLocalCollector = COLLECTOR_URL.includes('localhost') || COLLECTOR_URL.includes('127.0.0.1');
-    const isProd = import.meta.env.PROD;
-    
-    if (isProd && isLocalCollector) {
+    // Em produção com collector inválido ou local, pula direto para fallback
+    if (!isUsableCollector) {
       console.log('⚠️ Produção detectada com collector localhost, usando REST fallback');
       loadFallback();
       const id = setInterval(loadFallback, 60_000);
