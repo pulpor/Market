@@ -1,5 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 export const config = {
   runtime: 'edge',
 };
@@ -20,8 +18,7 @@ interface YahooChartResponse {
   };
 }
 
-export default async function handler(req: VercelRequest) {
-  // Enable CORS
+export default async function handler(req: Request) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
