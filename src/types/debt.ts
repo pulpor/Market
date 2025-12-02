@@ -39,11 +39,12 @@ export interface OtherDebt {
   id: string;
   descricao: string;
   valor: number; // R$
-  vencimento?: string; // ISO date
+  vencimento?: string; // ISO date (null = é anotação, não lembrete)
+  tem_vencimento: boolean; // controla se tem vencimento (lembrete) ou não (anotação)
 }
 
 export interface DebtsState {
-  financing?: FinancingDebt;
+  financings: FinancingDebt[]; // Changed from optional single object to array
   cardSpending: CardSpendingEntry[];
   monthlyTarget?: number; // meta mensal para cartão (R$)
   others: OtherDebt[];

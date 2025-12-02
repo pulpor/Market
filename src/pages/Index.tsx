@@ -6,7 +6,7 @@ import { AssetCard } from "@/components/AssetCard";
 import { Charts } from "@/components/Charts";
 import { DebtsSection } from "@/components/DebtsSection";
 import { ReturnsForecastSection } from "@/components/ReturnsForecastSection";
-import { loadDebts } from "@/services/debtStorage";
+import { loadDebts, saveDebts } from "@/services/debtStorage";
 import { DebtsState } from "@/types/debt";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
@@ -33,7 +33,17 @@ const Index = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 9;
   const [historyVersion, setHistoryVersion] = useState(0);
-  
+  const [histPage, setHistPage] = useState(1);
+  const histPerPage = 12;
+  const allHistory = useMemo(() => getHistoryWithDiff(), [historyVersion]);
+  const histTotalPages = Math.max(1, Math.ceil(allHistory.length / histPerPage));
+  const histEnd = allHistory.length - (histPage - 1) * histPerPage;
+  const histStart = Math.max(0, histEnd - histPerPage);
+  const pageHistory = allHistory.slice(histStart, histEnd);
+  useEffect(() => {
+    if (histPage > histTotalPages) setHistPage(histTotalPages);
+  }, [histTotalPages]);
+
   // Filtros e ordenação
   const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
   const KNOWN_BROKERS = useMemo(() => new Set(BROKER_LIST as readonly string[]), []);
@@ -43,6 +53,39 @@ const Index = () => {
     "valor_total" | "dividend_yield" | "quantidade" | "preco_atual" | "variacao_percentual" | "pl_posicao"
   >("valor_total");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+
+  // Debts State
+  const [debtsState, setDebtsState] = useState<DebtsState>({ financings: [], cardSpending: [], others: [], monthlyTarget: undefined });
+  const [forecastMonth, setForecastMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [debtTotals, setDebtTotals] = useState({ financingParcela: 0, cardMonthTotal: 0, othersTotal: 0 });
+
+  const recomputeDebtTotals = useCallback((st: DebtsState, m: string) => {
+    setDebtTotals(computeDebtForecast(st, m));
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const st = await loadDebts();
+      setDebtsState(st);
+      recomputeDebtTotals(st, forecastMonth);
+    })();
+  }, []); // Carrega apenas uma vez na montagem
+
+  const handleDebtsChange = (st: DebtsState) => {
+    setDebtsState(st);
+    recomputeDebtTotals(st, forecastMonth);
+  };
+
+  const removeDebtReminder = async (id: string) => {
+    const next = { ...debtsState, others: debtsState.others.filter(o => o.id !== id) };
+    setDebtsState(next);
+    await saveDebts(next);
+    recomputeDebtTotals(next, forecastMonth);
+    toast({ title: "Lembrete removido", description: "O lembrete de dívida foi removido com sucesso." });
+  };
 
   // Carrega os ativos do arquivo ao montar o componente
   useEffect(() => {
@@ -82,7 +125,7 @@ const Index = () => {
       calculateAndPersist(merged, true).then(() => {
         toast({
           title: editingAsset ? "Ativo atualizado" : "Cálculo concluído",
-          description: editingAsset 
+          description: editingAsset
             ? `${asset.ticker.toUpperCase()} foi atualizado com sucesso`
             : `${asset.ticker.toUpperCase()} adicionado e carteira recalculada`,
         });
@@ -97,7 +140,7 @@ const Index = () => {
     const updatedAssets = assets.filter((a) => a.id !== id);
     setAssets(updatedAssets);
     setCalculatedAssets((prev) => prev.filter((a) => a.id !== id));
-    
+
     // Salva automaticamente após remover
     await saveAssets(updatedAssets);
   };
@@ -163,7 +206,7 @@ const Index = () => {
         const tipo = (a.tipo_ativo_manual || '').toUpperCase();
         const usa252 = indice.includes('CDI') || indice.includes('SELIC') ||
           tipo.includes('LCI') || tipo.includes('LCA') || tipo.includes('CDB') || tipo.includes('TESOURO');
-        const dias = usa252 ? businessDaysBetween(dataAplic, hoje) : Math.max(0, Math.floor((hoje.getTime() - new Date(dataAplic).getTime()) / (1000*60*60*24)));
+        const dias = usa252 ? businessDaysBetween(dataAplic, hoje) : Math.max(0, Math.floor((hoje.getTime() - new Date(dataAplic).getTime()) / (1000 * 60 * 60 * 24)));
         if (dias <= 0) return principal;
         let taxaAnual: number | undefined;
         if (indice.includes('PRÉ')) {
@@ -226,7 +269,7 @@ const Index = () => {
         dy_ponderado: dy_ponderado_local,
         pl_total: pl_total_local,
       });
-      try { recordPortfolioSnapshot(valor_total_carteira_local); setHistoryVersion(v => v + 1); } catch {}
+      try { recordPortfolioSnapshot(valor_total_carteira_local); setHistoryVersion(v => v + 1); } catch { }
       await saveAssets(assetsToUse);
 
       if (!silent) {
@@ -282,12 +325,12 @@ const Index = () => {
   // Títulos de Renda Fixa com vencimento (ordenados por data)
   const upcomingMaturities = useMemo(() => {
     const today = new Date();
-    
+
     return calculatedAssets
       .filter(asset => asset.data_vencimento) // Apenas ativos com data de vencimento
       .map(asset => ({
         ...asset,
-        daysUntilMaturity: asset.data_vencimento 
+        daysUntilMaturity: asset.data_vencimento
           ? Math.ceil((new Date(asset.data_vencimento).getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
           : 0
       }))
@@ -297,6 +340,43 @@ const Index = () => {
         return new Date(a.data_vencimento).getTime() - new Date(b.data_vencimento).getTime();
       });
   }, [calculatedAssets]);
+
+  // Combined Reminders (Assets + Debts)
+  const allReminders = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const assetReminders = calculatedAssets
+      .filter(asset => asset.data_vencimento)
+      .map(asset => ({
+        id: asset.id,
+        type: 'asset' as const,
+        title: asset.ticker_normalizado.replace(".SA", "") || asset.tipo_ativo_manual || "Ativo",
+        subtitle: `${asset.tipo_ativo_manual || 'Renda Fixa'} • ${asset.corretora}`,
+        date: new Date(asset.data_vencimento!),
+        value: asset.valor_total, // Valor atual aproximado
+        original: asset
+      }));
+
+    const debtReminders = debtsState.others
+      .filter(d => d.tem_vencimento && d.vencimento)
+      .map(d => ({
+        id: d.id,
+        type: 'debt' as const,
+        title: d.descricao,
+        subtitle: "Lembrete de Dívida",
+        date: new Date(d.vencimento!),
+        value: d.valor,
+        original: d
+      }));
+
+    const combined = [...assetReminders, ...debtReminders].map(item => {
+      const daysUntil = Math.ceil((item.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return { ...item, daysUntil };
+    });
+
+    return combined.sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [calculatedAssets, debtsState.others]);
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
@@ -325,7 +405,7 @@ const Index = () => {
         <MarketBar />
 
         {/* Formulário */}
-        <AssetForm 
+        <AssetForm
           onAddAndCalculate={handleAddAndCalculate}
           isCalculating={isCalculating}
           editingAsset={editingAsset}
@@ -379,11 +459,10 @@ const Index = () => {
                   <div>
                     <p className="text-muted-foreground text-sm mb-1">Crescimento Médio</p>
                     <p
-                      className={`text-3xl font-bold ${
-                        calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0 
-                          ? "text-success" 
-                          : "text-destructive"
-                      }`}
+                      className={`text-3xl font-bold ${calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0
+                        ? "text-success"
+                        : "text-destructive"
+                        }`}
                     >
                       {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0 ? "+" : "")}
                       {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
@@ -392,9 +471,8 @@ const Index = () => {
                   <div>
                     <p className="text-muted-foreground text-sm mb-1">P/L Total</p>
                     <p
-                      className={`text-3xl font-bold ${
-                        summary.pl_total >= 0 ? "text-success" : "text-destructive"
-                      }`}
+                      className={`text-3xl font-bold ${summary.pl_total >= 0 ? "text-success" : "text-destructive"
+                        }`}
                     >
                       R$ {summary.pl_total >= 0 ? "+" : ""}
                       {summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -438,12 +516,12 @@ const Index = () => {
                       <Calendar className="h-5 w-5" /> Histórico mensal do patrimônio
                     </h3>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => { 
-                        const m = prompt('Mês (YYYY-MM):'); 
-                        const v = prompt('Valor (R$):'); 
+                      <Button variant="outline" size="sm" onClick={() => {
+                        const m = prompt('Mês (YYYY-MM):');
+                        const v = prompt('Valor (R$):');
                         if (m && v) { addMonth(m, parseFloat(v.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
                       }}>+ Adicionar mês</Button>
-                      <Button variant="outline" size="sm" onClick={() => { try { recordPortfolioSnapshot(summary.valor_total_carteira); setHistoryVersion(v => v + 1);} catch {} }}>Registrar mês atual</Button>
+                      <Button variant="outline" size="sm" onClick={() => { try { recordPortfolioSnapshot(summary.valor_total_carteira); setHistoryVersion(v => v + 1); } catch { } }}>Registrar mês atual</Button>
                     </div>
                   </div>
 
@@ -459,11 +537,11 @@ const Index = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {getHistoryWithDiff().map((row) => (
+                        {pageHistory.map((row) => (
                           <tr key={row.month} className="border-t border-border/60 hover:bg-muted/30">
                             <td className="p-3">{row.month}</td>
                             <td className="p-3 text-right">
-                              <button 
+                              <button
                                 className="hover:underline text-left w-full text-right"
                                 onClick={() => {
                                   const newVal = prompt(`Editar valor de ${row.month}:`, row.value.toString());
@@ -476,13 +554,13 @@ const Index = () => {
                             <td className={`p-3 text-right ${row.diff && row.diff < 0 ? 'text-destructive' : 'text-success'}`}>{row.diff == null ? '—' : `R$ ${(row.diff >= 0 ? '+' : '')}${row.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                             <td className={`p-3 text-right ${row.diffPct && row.diffPct < 0 ? 'text-destructive' : 'text-success'}`}>{row.diffPct == null ? '—' : `${row.diffPct >= 0 ? '+' : ''}${row.diffPct.toFixed(2)}%`}</td>
                             <td className="p-3 text-center">
-                              <Button variant="ghost" size="sm" onClick={() => { if(confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); }}} className="text-destructive hover:text-destructive">
+                              <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); } }} className="text-destructive hover:text-destructive">
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </td>
                           </tr>
                         ))}
-                        {getHistoryWithDiff().length === 0 && (
+                        {allHistory.length === 0 && (
                           <tr>
                             <td colSpan={5} className="p-4 text-center text-muted-foreground">Nenhum registro ainda. Clique em "+ Adicionar mês" ou "Registrar mês atual".</td>
                           </tr>
@@ -490,6 +568,18 @@ const Index = () => {
                       </tbody>
                     </table>
                   </div>
+                  {allHistory.length > 0 && (
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
+                      <div>
+                        Mostrando {Math.min(allHistory.length, histStart + 1)}–{histEnd} de {allHistory.length}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" disabled={histPage >= histTotalPages} onClick={() => setHistPage(p => Math.min(histTotalPages, p + 1))}>Anterior</Button>
+                        <span>Página {histPage} / {histTotalPages}</span>
+                        <Button variant="outline" size="sm" disabled={histPage <= 1} onClick={() => setHistPage(p => Math.max(1, p - 1))}>Próxima</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
@@ -504,7 +594,7 @@ const Index = () => {
                     }, 0);
                     const crescimentoMedio = assetsCorretora.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsCorretora.length;
                     const plTotal = assetsCorretora.reduce((sum, a) => sum + a.pl_posicao, 0);
-                    
+
                     return (
                       <div key={corretora} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
                         <div className="flex items-center gap-2 mb-4">
@@ -555,7 +645,7 @@ const Index = () => {
                       const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
                       const projecaoAnual = assetsCorretora.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
                       const projecaoMensal = projecaoAnual / 12;
-                      
+
                       return (
                         <div key={corretora} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
                           <div className="flex items-center gap-2 mb-3">
@@ -594,7 +684,7 @@ const Index = () => {
                     }, 0);
                     const crescimentoMedio = assetsTipo.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsTipo.length;
                     const plTotal = assetsTipo.reduce((sum, a) => sum + a.pl_posicao, 0);
-                    
+
                     return (
                       <div key={tipo} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
                         <div className="flex items-center gap-2 mb-4">
@@ -645,7 +735,7 @@ const Index = () => {
                       const assetsTipo = calculatedAssets.filter(a => (a.tipo_ativo || 'Outro') === tipo);
                       const projecaoAnual = assetsTipo.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
                       const projecaoMensal = projecaoAnual / 12;
-                      
+
                       return (
                         <div key={tipo} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
                           <div className="flex items-center gap-2 mb-3">
@@ -684,7 +774,7 @@ const Index = () => {
                     }, 0);
                     const crescimentoMedio = assetsSetor.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsSetor.length;
                     const plTotal = assetsSetor.reduce((sum, a) => sum + a.pl_posicao, 0);
-                    
+
                     return (
                       <div key={setor} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
                         <div className="flex items-center gap-2 mb-4">
@@ -735,7 +825,7 @@ const Index = () => {
                       const assetsSetor = calculatedAssets.filter(a => (a.setor || 'Outros') === setor);
                       const projecaoAnual = assetsSetor.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
                       const projecaoMensal = projecaoAnual / 12;
-                      
+
                       return (
                         <div key={setor} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
                           <div className="flex items-center gap-2 mb-3">
@@ -773,7 +863,7 @@ const Index = () => {
               <h2 className="text-2xl font-bold text-foreground">Meus Ativos</h2>
 
               {/* Barra de filtros/ordenação + busca */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 w-full md:w-auto items-end">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full items-end">
                 {/* Busca */}
                 <div className="space-y-1">
                   <div className="text-sm text-muted-foreground flex items-center gap-1"><Search className="h-4 w-4" /> Busca</div>
@@ -805,7 +895,7 @@ const Index = () => {
                     <Building2 className="h-4 w-4" /> Corretora
                   </div>
                   <Select value={brokerFilter} onValueChange={(v) => setBrokerFilter(v as any)}>
-                    <SelectTrigger className="min-w-[120px]"><SelectValue placeholder="Todas" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Todas">Todas</SelectItem>
                       {BROKER_LIST.map(b => (
@@ -821,7 +911,7 @@ const Index = () => {
                     <Filter className="h-4 w-4" /> Ordenar por
                   </div>
                   <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
-                    <SelectTrigger className="min-w-[120px]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="valor_total">Maior valor</SelectItem>
                       <SelectItem value="dividend_yield">Maior DY</SelectItem>
@@ -845,6 +935,7 @@ const Index = () => {
                       size="sm"
                       onClick={() => setSortDir("desc")}
                       title="Maior para menor"
+                      className="flex-1"
                     >
                       <ArrowDownWideNarrow className="h-4 w-4 mr-1" /> Desc
                     </Button>
@@ -854,6 +945,7 @@ const Index = () => {
                       size="sm"
                       onClick={() => setSortDir("asc")}
                       title="Menor para maior"
+                      className="flex-1"
                     >
                       <ArrowUpWideNarrow className="h-4 w-4 mr-1" /> Asc
                     </Button>
@@ -865,9 +957,9 @@ const Index = () => {
               {displayedAssets
                 .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                 .map((asset) => (
-                  <AssetCard 
-                    key={asset.id} 
-                    asset={asset} 
+                  <AssetCard
+                    key={asset.id}
+                    asset={asset}
                     onRemove={handleRemoveAsset}
                     onEdit={handleEditAsset}
                   />
@@ -886,7 +978,7 @@ const Index = () => {
                 >
                   Anterior
                 </Button>
-                
+
                 <div className="flex gap-1">
                   {Array.from({ length: Math.ceil(displayedAssets.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
                     <Button
@@ -931,10 +1023,10 @@ const Index = () => {
                 doc.setFontSize(18);
                 doc.text("Resumo da Carteira", 14, 18);
                 doc.setFontSize(12);
-                doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', {minimumFractionDigits:2})}` , 14, 28);
-                doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', {minimumFractionDigits:2})}%`, 14, 36);
-                doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', {minimumFractionDigits:2})}%`, 14, 44);
-                doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', {minimumFractionDigits:2})}`, 14, 52);
+                doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 28);
+                doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 36);
+                doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 44);
+                doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 52);
                 (doc as any).autoTable({
                   startY: 60,
                   head: [[
@@ -951,7 +1043,7 @@ const Index = () => {
                   body: calculatedAssets.map(a => {
                     const indice = a.indice_referencia || '';
                     const taxa = (typeof a.taxa_contratada === 'number' && a.taxa_contratada > 0)
-                      ? `${a.taxa_contratada.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}%`
+                      ? `${a.taxa_contratada.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
                       : '';
                     return [
                       a.ticker_normalizado.replace('.SA', ''),
@@ -959,10 +1051,10 @@ const Index = () => {
                       indice,
                       taxa,
                       a.corretora,
-                      `R$ ${a.valor_total.toLocaleString('pt-BR', {minimumFractionDigits:2})}`,
-                      (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : `R$ ${a.valor_total.toLocaleString('pt-BR', {minimumFractionDigits:2})}`,
-                      `${a.variacao_percentual?.toLocaleString('pt-BR', {minimumFractionDigits:2}) ?? '-'}%`,
-                      `R$ ${a.pl_posicao?.toLocaleString('pt-BR', {minimumFractionDigits:2}) ?? '-'}`
+                      `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                      (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                      `${a.variacao_percentual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}%`,
+                      `R$ ${a.pl_posicao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}`
                     ];
                   }),
                   styles: { fontSize: 10 },
@@ -979,8 +1071,8 @@ const Index = () => {
           </div>
         )}
 
-        {/* Lembretes - Vencimentos de Títulos */}
-        {upcomingMaturities.length > 0 && (
+        {/* Lembretes - Vencimentos de Títulos e Dívidas */}
+        {allReminders.length > 0 && (
           <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-amber-500/10 rounded-lg">
@@ -989,53 +1081,56 @@ const Index = () => {
               <div>
                 <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
                   Lembretes
-                  {upcomingMaturities.filter(a => a.daysUntilMaturity <= 30).length > 0 && (
+                  {allReminders.filter(a => a.daysUntil <= 30).length > 0 && (
                     <span className="px-2 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-semibold rounded-full">
-                      {upcomingMaturities.filter(a => a.daysUntilMaturity <= 30 && a.daysUntilMaturity >= 0).length} próximo(s)
+                      {allReminders.filter(a => a.daysUntil <= 30 && a.daysUntil >= 0).length} próximo(s)
                     </span>
                   )}
                 </h2>
-                <p className="text-sm text-muted-foreground">Vencimentos dos seus títulos de renda fixa</p>
+                <p className="text-sm text-muted-foreground">Vencimentos de títulos e contas a pagar</p>
               </div>
             </div>
 
             <div className="space-y-3">
-              {upcomingMaturities.map((asset) => {
-                const isExpiringSoon = asset.daysUntilMaturity <= 30 && asset.daysUntilMaturity >= 0;
-                const isExpired = asset.daysUntilMaturity < 0;
-                
+              {allReminders.map((item) => {
+                const isExpiringSoon = item.daysUntil <= 30 && item.daysUntil >= 0;
+                const isExpired = item.daysUntil < 0;
+                const isDebt = item.type === 'debt';
+
                 return (
-                  <div 
-                    key={asset.id} 
-                    className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-lg border transition-all hover:shadow-md ${
-                      isExpired 
-                        ? 'bg-red-500/5 border-red-500/20 hover:border-red-500/40' 
-                        : isExpiringSoon 
-                          ? 'bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40'
-                          : 'bg-card border-border hover:border-primary/30'
-                    }`}
+                  <div
+                    key={`${item.type}-${item.id}`}
+                    className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-lg border transition-all hover:shadow-md ${isExpired
+                      ? 'bg-red-500/5 border-red-500/20 hover:border-red-500/40'
+                      : isExpiringSoon
+                        ? 'bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40'
+                        : 'bg-card border-border hover:border-primary/30'
+                      }`}
                   >
                     <div className="flex items-center gap-4 flex-1">
-                      <div className={`p-2.5 rounded-lg shrink-0 ${
-                        isExpired 
-                          ? 'bg-red-500/10' 
-                          : isExpiringSoon 
-                            ? 'bg-amber-500/10' 
-                            : 'bg-primary/10'
-                      }`}>
-                        <Calendar className={`h-5 w-5 ${
-                          isExpired 
-                            ? 'text-red-500' 
-                            : isExpiringSoon 
-                              ? 'text-amber-500' 
+                      <div className={`p-2.5 rounded-lg shrink-0 ${isExpired
+                        ? 'bg-red-500/10'
+                        : isExpiringSoon
+                          ? 'bg-amber-500/10'
+                          : isDebt ? 'bg-blue-500/10' : 'bg-primary/10'
+                        }`}>
+                        {isDebt ? (
+                          <Bell className={`h-5 w-5 ${isExpired ? 'text-red-500' : isExpiringSoon ? 'text-amber-500' : 'text-blue-500'
+                            }`} />
+                        ) : (
+                          <Calendar className={`h-5 w-5 ${isExpired
+                            ? 'text-red-500'
+                            : isExpiringSoon
+                              ? 'text-amber-500'
                               : 'text-primary'
-                        }`} />
+                            }`} />
+                        )}
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-bold text-foreground text-lg">
-                            {asset.ticker_normalizado.replace(".SA", "") || asset.tipo_ativo_manual}
+                            {item.title}
                           </h3>
                           {isExpiringSoon && (
                             <span className="px-2 py-0.5 bg-amber-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
@@ -1049,40 +1144,58 @@ const Index = () => {
                               Vencido
                             </span>
                           )}
+                          {isDebt && (
+                            <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
+                              Dívida
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">
-                          {asset.tipo_ativo_manual || 'Renda Fixa'} • {asset.corretora}
+                          {item.subtitle} • {item.value ? item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ -'}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6 md:gap-8">
+                    <div className="flex items-center gap-6 md:gap-8 w-full md:w-auto justify-between md:justify-end">
                       <div className="text-left md:text-right">
                         <p className="text-xs text-muted-foreground mb-1">Vencimento</p>
                         <p className="text-base md:text-lg font-bold text-foreground whitespace-nowrap">
-                          {new Date(asset.data_vencimento!).toLocaleDateString('pt-BR')}
+                          {item.date.toLocaleDateString('pt-BR')}
                         </p>
                       </div>
-                      
-                      <div className="text-left md:text-right min-w-[120px]">
+
+                      <div className="text-left md:text-right min-w-[100px]">
                         <p className="text-xs text-muted-foreground mb-1">Faltam</p>
-                        <p className={`text-base md:text-lg font-bold whitespace-nowrap ${
-                          isExpired 
-                            ? 'text-red-600 dark:text-red-400' 
-                            : isExpiringSoon 
-                              ? 'text-amber-600 dark:text-amber-400'
-                              : 'text-foreground'
-                        }`}>
-                          {isExpired 
-                            ? `${Math.abs(asset.daysUntilMaturity)} dias atrás`
-                            : asset.daysUntilMaturity === 0
+                        <p className={`text-base md:text-lg font-bold whitespace-nowrap ${isExpired
+                          ? 'text-red-600 dark:text-red-400'
+                          : isExpiringSoon
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-foreground'
+                          }`}>
+                          {isExpired
+                            ? `${Math.abs(item.daysUntil)} dias atrás`
+                            : item.daysUntil === 0
                               ? 'Vence hoje!'
-                              : asset.daysUntilMaturity === 1
+                              : item.daysUntil === 1
                                 ? '1 dia'
-                                : `${asset.daysUntilMaturity} dias`
+                                : `${item.daysUntil} dias`
                           }
                         </p>
                       </div>
+
+                      {isDebt && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            if (confirm("Remover este lembrete?")) removeDebtReminder(item.id);
+                          }}
+                          title="Remover lembrete"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -1091,8 +1204,20 @@ const Index = () => {
           </div>
         )}
 
-        {/* Previsão de Retornos + Minhas Dívidas (posicionado antes dos gráficos) */}
-        <ForecastWithDebts />
+        {/* Previsão de Retornos + Minhas Dívidas */}
+        <div>
+          <DebtsSection data={debtsState} onChange={handleDebtsChange} />
+          <ReturnsForecastSection
+            financingParcela={debtTotals.financingParcela}
+            cardMonthTotal={debtTotals.cardMonthTotal}
+            othersTotal={debtTotals.othersTotal}
+            month={forecastMonth}
+            onMonthChange={(m) => {
+              setForecastMonth(m);
+              recomputeDebtTotals(debtsState, m);
+            }}
+          />
+        </div>
 
         {/* Gráficos */}
         {calculatedAssets.length > 0 && (
@@ -1108,56 +1233,31 @@ const Index = () => {
 
 // Componente wrapper para integrar Dívidas e Previsão de Retornos
 
-function computeDebtForecast(state: DebtsState, month: string){
+function computeDebtForecast(state: DebtsState, month: string) {
   // Financiamento
   let financingParcela = 0;
-  if(state.financing){
-    if(state.financing.parcela_atual && state.financing.parcela_atual > 0){
+  if (state.financing) {
+    if (state.financing.parcela_atual && state.financing.parcela_atual > 0) {
       financingParcela = state.financing.parcela_atual;
     } else {
       const P = state.financing.valor_financiado || 0;
       const n = state.financing.prazo_total_meses || 0;
       const i_a = state.financing.taxa_juros_nominal || 0;
-      const i_m = (i_a/12)/100;
-      if(P>0 && n>0){
-        financingParcela = i_m>0 ? (P*i_m)/(1 - Math.pow(1+i_m, -n)) : P/n;
+      const i_m = (i_a / 12) / 100;
+      if (P > 0 && n > 0) {
+        financingParcela = i_m > 0 ? (P * i_m) / (1 - Math.pow(1 + i_m, -n)) : P / n;
       }
     }
   }
-  const cardMonthTotal = state.cardSpending.filter(e=>e.month===month).reduce((s,e)=>s+e.amount,0);
+  const cardMonthTotal = state.cardSpending.filter(e => e.month === month).reduce((s, e) => s + e.amount, 0);
   // Considera apenas "Outros" com vencimento no mês selecionado
-  const othersTotal = state.others.reduce((s,o)=>{
-    if(!o.vencimento) return s; // sem vencimento não entra por padrão
+  const othersTotal = state.others.reduce((s, o) => {
+    if (!o.vencimento) return s; // sem vencimento não entra por padrão
     return o.vencimento.startsWith(month) ? s + o.valor : s;
-  },0);
+  }, 0);
   return { financingParcela, cardMonthTotal, othersTotal };
 }
 
-function ForecastWithDebts(){
-  const [month,setMonth] = useState(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;});
-  const [debtsState,setDebtsState] = useState<DebtsState>({ financing: undefined, cardSpending: [], others: [] });
-  const [totals,setTotals] = useState({ financingParcela:0, cardMonthTotal:0, othersTotal:0 });
 
-  const recompute = useCallback((st: DebtsState, m:string)=>{
-    setTotals(computeDebtForecast(st,m));
-  },[]);
-
-  useEffect(()=>{ (async ()=>{ const st = await loadDebts(); setDebtsState(st); recompute(st,month); })(); },[month, recompute]);
-
-  const handleDebtsChange = (st: DebtsState)=>{ setDebtsState(st); recompute(st, month); };
-
-  return (
-    <div>
-      <DebtsSection onChange={handleDebtsChange} />
-      <ReturnsForecastSection
-        financingParcela={totals.financingParcela}
-        cardMonthTotal={totals.cardMonthTotal}
-        othersTotal={totals.othersTotal}
-        month={month}
-        onMonthChange={(m)=>{ setMonth(m); recompute(debtsState,m); }}
-      />
-    </div>
-  );
-}
 
 export default Index;
