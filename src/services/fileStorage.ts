@@ -7,13 +7,17 @@ import { v4 as uuidv4, validate as uuidValidate, version as uuidVersion } from "
 const sb: any = supabase;
 
 const API_URL = "http://localhost:3001/api/assets";
-const LOCAL_STORAGE_KEY = "dashboard-b3-assets";
+const BASE_STORAGE_KEY = "dashboard-b3-assets";
 
 // Detecta se está em produção (sem servidor local disponível)
 const isProduction = import.meta.env.PROD;
 const hasSupabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Only use the local storage server when explicitly enabled
 const useLocalServer = !isProduction && import.meta.env.VITE_USE_LOCAL_STORAGE_SERVER === '1';
+
+function getStorageKey(userId: string) {
+  return `${BASE_STORAGE_KEY}-${userId}`;
+}
 
 /**
  * Carrega os ativos do usuário logado no Supabase (se configurado),
@@ -26,11 +30,14 @@ export async function loadAssets(): Promise<Asset[]> {
       const { data: { session } } = await supabase.auth.getSession();
       const user = session?.user;
       if (user) {
+        const storageKey = getStorageKey(user.id);
+
         const { data, error } = await sb
           .from('assets')
           .select('*')
           .eq('user_id', user.id)
           .order('ticker');
+
         if (error) {
           console.error("❌ Erro ao carregar do Supabase:", error);
         } else if (Array.isArray(data) && data.length > 0) {
@@ -52,41 +59,37 @@ export async function loadAssets(): Promise<Asset[]> {
           // Dados do Supabase já devem ter UUIDs válidos; ainda assim, validamos por segurança
           const fixed = list.map(a => (uuidValidate(a.id) && uuidVersion(a.id) === 4) ? a : { ...a, id: uuidv4() });
           if (JSON.stringify(fixed) !== JSON.stringify(list)) {
-            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch { }
+            try { localStorage.setItem(storageKey, JSON.stringify(fixed)); } catch { }
           }
           return fixed;
         } else {
           console.warn("ℹ️ Supabase retornou 0 ativos.");
         }
+
+        // Fallback para localStorage DO USUÁRIO
+        try {
+          const data = localStorage.getItem(storageKey);
+          if (data) {
+            const assets = JSON.parse(data);
+            if (Array.isArray(assets) && assets.length > 0) {
+              const fixed = assets.map((a: Asset) => {
+                const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
+                return ok ? a : { ...a, id: uuidv4() };
+              });
+              console.log(`✅ ${fixed.length} ativo(s) carregado(s) do localStorage (User)`);
+              return fixed;
+            }
+          }
+        } catch (error) {
+          console.error("❌ Erro ao carregar do localStorage:", error);
+        }
+
       } else {
         console.log("⚠️ Usuário não autenticado");
       }
     } catch (error) {
       console.error("❌ Erro ao acessar Supabase:", error);
     }
-  }
-
-  // Tentativa 2: localStorage (sempre disponível no browser)
-  try {
-    const data = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (data) {
-      const assets = JSON.parse(data);
-      if (Array.isArray(assets) && assets.length > 0) {
-        // Normaliza IDs caso o storage tenha valores antigos (timestamps etc.)
-        const fixed = assets.map((a: Asset) => {
-          const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
-          return ok ? a : { ...a, id: uuidv4() };
-        });
-        if (JSON.stringify(fixed) !== JSON.stringify(assets)) {
-          try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch { }
-        }
-        console.log(`✅ ${fixed.length} ativo(s) carregado(s) do localStorage`);
-        return fixed;
-      }
-    }
-    console.log("ℹ️ Nenhum ativo salvo no localStorage.");
-  } catch (error) {
-    console.error("❌ Erro ao carregar do localStorage:", error);
   }
 
   // Tentativa 3: servidor local (opcional; somente se explicitamente habilitado)
@@ -105,9 +108,6 @@ export async function loadAssets(): Promise<Asset[]> {
             const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
             return ok ? a : { ...a, id: uuidv4() };
           });
-          if (JSON.stringify(fixed) !== JSON.stringify(arr)) {
-            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch { }
-          }
           console.log(`✅ ${fixed.length} ativo(s) carregado(s) do arquivo assets.json`);
           return fixed;
         }
@@ -144,25 +144,6 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
 
   const { normalized: assetsWithUuid, changed: idsChanged } = normalizeIds(assets);
 
-  // PROTEÇÃO 1: Backup automático no localStorage ANTES de qualquer operação
-  const BACKUP_KEY = `${LOCAL_STORAGE_KEY}_backup`;
-  try {
-    const currentData = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (currentData) {
-      localStorage.setItem(BACKUP_KEY, currentData);
-      console.log('💾 Backup automático criado antes de salvar');
-    }
-  } catch (error) {
-    console.warn('⚠️ Não foi possível criar backup:', error);
-  }
-
-  // PROTEÇÃO 2: Validação de segurança - avisar ao salvar lista vazia
-  if (assets.length === 0) {
-    console.warn('⚠️ ATENÇÃO: Tentando salvar lista VAZIA de ativos!');
-    console.warn('   Isso NÃO vai deletar dados existentes (UPSERT protege)');
-    console.warn('   Mas confirme se era isso que você queria.');
-  }
-
   // 1) Tenta Supabase primeiro se configurado
   if (hasSupabase) {
     try {
@@ -172,6 +153,19 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
       if (!user) {
         console.error("❌ Usuário não autenticado");
       } else {
+        const storageKey = getStorageKey(user.id);
+        const BACKUP_KEY = `${storageKey}_backup`;
+
+        // PROTEÇÃO 1: Backup automático no localStorage ANTES de qualquer operação
+        try {
+          const currentData = localStorage.getItem(storageKey);
+          if (currentData) {
+            localStorage.setItem(BACKUP_KEY, currentData);
+          }
+        } catch (error) {
+          console.warn('⚠️ Não foi possível criar backup:', error);
+        }
+
         console.log(`📤 Sincronizando ${assets.length} ativo(s) com Supabase...`);
 
         // 1. Buscar IDs existentes no banco para este usuário
@@ -234,18 +228,15 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
 
           if (upsertError) {
             console.error("❌ Erro ao fazer UPSERT no Supabase:", upsertError);
-            console.error("   Detalhes:", upsertError.message);
 
             // PROTEÇÃO 3: Restaurar backup em caso de erro
             try {
               const backup = localStorage.getItem(BACKUP_KEY);
               if (backup) {
-                localStorage.setItem(LOCAL_STORAGE_KEY, backup);
+                localStorage.setItem(storageKey, backup);
                 console.log('🔄 Backup restaurado após erro');
               }
-            } catch (restoreError) {
-              console.error('❌ Falha ao restaurar backup:', restoreError);
-            }
+            } catch (restoreError) { }
           } else {
             console.log(`✅ ${assetsWithUuid.length} ativo(s) salvos com sucesso no Supabase (UPSERT)`);
             savedSomewhere = true;
@@ -254,33 +245,19 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
           console.log('ℹ️ Lista vazia - nenhuma inserção/atualização necessária');
           savedSomewhere = true;
         }
+
+        // 2) Sempre salva no localStorage como backup redundante (User Specific)
+        try {
+          const toPersist = idsChanged ? assetsWithUuid : assets;
+          localStorage.setItem(storageKey, JSON.stringify(toPersist));
+          console.log(`✅ ${assets.length} ativo(s) salvo(s) no localStorage (backup redundante)`);
+          savedSomewhere = true;
+        } catch (error) {
+          console.error("❌ Erro ao salvar no localStorage:", error);
+        }
       }
     } catch (error) {
       console.error("❌ Erro ao salvar no Supabase:", error);
-
-      // PROTEÇÃO 3: Restaurar backup em caso de erro crítico
-      try {
-        const backup = localStorage.getItem(BACKUP_KEY);
-        if (backup) {
-          localStorage.setItem(LOCAL_STORAGE_KEY, backup);
-          console.log('🔄 Backup restaurado após erro crítico');
-        }
-      } catch (restoreError) {
-        console.error('❌ Falha ao restaurar backup:', restoreError);
-      }
-    }
-  }
-
-  // 2) Sempre salva no localStorage como backup redundante
-  if (isProduction || hasSupabase) {
-    try {
-      // Se IDs foram normalizados, persistimos a versão normalizada para manter consistência entre dispositivos
-      const toPersist = idsChanged ? assetsWithUuid : assets;
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(toPersist));
-      console.log(`✅ ${assets.length} ativo(s) salvo(s) no localStorage (backup redundante)`);
-      savedSomewhere = true;
-    } catch (error) {
-      console.error("❌ Erro ao salvar no localStorage:", error);
     }
   }
 
@@ -305,17 +282,6 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
     } catch (error) {
       console.warn("⚠️ Servidor local não disponível (habilite com VITE_USE_LOCAL_STORAGE_SERVER=1)");
     }
-  }
-
-  // Log final do resultado
-  if (savedSomewhere) {
-    console.log(`\n📊 Resumo do salvamento (${new Date().toLocaleString('pt-BR')}):`);
-    console.log(`   Total de ativos: ${(idsChanged ? assetsWithUuid : assets).length}`);
-    console.log(`   Renda Variável: ${(idsChanged ? assetsWithUuid : assets).filter(a => !a.tipo_ativo_manual).length}`);
-    console.log(`   Renda Fixa: ${(idsChanged ? assetsWithUuid : assets).filter(a => a.tipo_ativo_manual).length}`);
-    console.log(`   Status: ✅ Salvo com sucesso\n`);
-  } else {
-    console.error('❌ FALHA: Não foi possível salvar em nenhum destino!');
   }
 
   return savedSomewhere;

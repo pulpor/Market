@@ -1,42 +1,53 @@
 import { DebtsState, FinancingDebt } from "@/types/debt";
 import { supabase } from "@/lib/supabase";
 
-const LOCAL_STORAGE_KEY = "dashboard-b3-debts";
+const BASE_STORAGE_KEY = "dashboard-b3-debts";
 
 // Untyped alias to avoid TS errors with non-existent tables in generated types
 const sb: any = supabase;
 
+function getStorageKey(userId: string) {
+  return `${BASE_STORAGE_KEY}-${userId}`;
+}
+
 export async function loadDebts(): Promise<DebtsState> {
-  // 1. Tenta carregar do Supabase se houver usuário logado
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const { data, error } = await sb
-        .from('debts')
-        .select('content')
-        .eq('user_id', session.user.id)
-        .maybeSingle();
 
-      if (data?.content) {
-        console.log("✅ Dívidas carregadas do Supabase");
-        // Atualiza cache local
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data.content));
-        return parseDebts(data.content);
+    if (session?.user) {
+      const storageKey = getStorageKey(session.user.id);
+
+      // 1. Tenta carregar do Supabase
+      try {
+        const { data, error } = await sb
+          .from('debts')
+          .select('content')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (data?.content) {
+          console.log("✅ Dívidas carregadas do Supabase");
+          // Atualiza cache local do usuário
+          localStorage.setItem(storageKey, JSON.stringify(data.content));
+          return parseDebts(data.content);
+        }
+      } catch (e) {
+        console.warn("Erro ao carregar dívidas do Supabase:", e);
+      }
+
+      // 2. Fallback para localStorage DO USUÁRIO
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return parseDebts(parsed);
+        }
+      } catch (e) {
+        console.warn("Não foi possível carregar dívidas do localStorage", e);
       }
     }
   } catch (e) {
-    console.warn("Erro ao carregar dívidas do Supabase:", e);
-  }
-
-  // 2. Fallback para localStorage
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parseDebts(parsed);
-    }
-  } catch (e) {
-    console.warn("Não foi possível carregar dívidas do localStorage", e);
+    console.error("Erro geral em loadDebts:", e);
   }
 
   return { financings: [], cardSpending: [], others: [] };
@@ -65,18 +76,20 @@ function parseDebts(parsed: any): DebtsState {
 export async function saveDebts(state: DebtsState): Promise<boolean> {
   let saved = false;
 
-  // 1. Salva no localStorage (cache/backup)
-  try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
-    saved = true;
-  } catch (e) {
-    console.error("Erro ao salvar dívidas no localStorage", e);
-  }
-
-  // 2. Salva no Supabase
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
+      const storageKey = getStorageKey(session.user.id);
+
+      // 1. Salva no localStorage (cache/backup) do usuário
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        saved = true;
+      } catch (e) {
+        console.error("Erro ao salvar dívidas no localStorage", e);
+      }
+
+      // 2. Salva no Supabase
       const { error } = await sb
         .from('debts')
         .upsert({

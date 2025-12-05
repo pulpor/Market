@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { getHistoryWithDiff, recordPortfolioSnapshot, updateMonthValue, deleteMonth, addMonth, initializeWithUserData } from "@/services/portfolioHistory";
 // Removido import do util PDF
 
@@ -591,49 +592,52 @@ const Index = () => {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto border border-border rounded-lg">
-                    <table className="w-full text-sm">
-                      <thead className="bg-muted/50">
-                        <tr>
-                          <th className="text-left p-3">Mês</th>
-                          <th className="text-right p-3">Valor</th>
-                          <th className="text-right p-3">Diferença</th>
-                          <th className="text-right p-3">% M/M</th>
-                          <th className="text-center p-3">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pageHistory.map((row) => (
-                          <tr key={row.month} className="border-t border-border/60 hover:bg-muted/30">
-                            <td className="p-3">{row.month}</td>
-                            <td className="p-3 text-right">
-                              <button
-                                className="hover:underline text-left w-full text-right"
-                                onClick={() => {
-                                  const newVal = prompt(`Editar valor de ${row.month}:`, row.value.toString());
-                                  if (newVal) { updateMonthValue(row.month, parseFloat(newVal.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
-                                }}
-                              >
-                                R$ {row.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </button>
-                            </td>
-                            <td className={`p-3 text-right ${row.diff && row.diff < 0 ? 'text-destructive' : 'text-success'}`}>{row.diff == null ? '—' : `R$ ${(row.diff >= 0 ? '+' : '')}${row.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                            <td className={`p-3 text-right ${row.diffPct && row.diffPct < 0 ? 'text-destructive' : 'text-success'}`}>{row.diffPct == null ? '—' : `${row.diffPct >= 0 ? '+' : ''}${row.diffPct.toFixed(2)}%`}</td>
-                            <td className="p-3 text-center">
-                              <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); } }} className="text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </td>
-                          </tr>
-                        ))}
-                        {allHistory.length === 0 && (
+                  <ScrollArea className="w-full whitespace-nowrap rounded-lg border border-border">
+                    <div className="w-full">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
                           <tr>
-                            <td colSpan={5} className="p-4 text-center text-muted-foreground">Nenhum registro ainda. Clique em "+ Adicionar mês" ou "Registrar mês atual".</td>
+                            <th className="text-left p-3">Mês</th>
+                            <th className="text-right p-3">Valor</th>
+                            <th className="text-right p-3">Diferença</th>
+                            <th className="text-right p-3">% M/M</th>
+                            <th className="text-center p-3">Ações</th>
                           </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {pageHistory.map((row) => (
+                            <tr key={row.month} className="border-t border-border/60 hover:bg-muted/30">
+                              <td className="p-3">{row.month}</td>
+                              <td className="p-3 text-right">
+                                <button
+                                  className="hover:underline text-left w-full text-right"
+                                  onClick={() => {
+                                    const newVal = prompt(`Editar valor de ${row.month}:`, row.value.toString());
+                                    if (newVal) { updateMonthValue(row.month, parseFloat(newVal.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
+                                  }}
+                                >
+                                  R$ {row.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </button>
+                              </td>
+                              <td className={`p-3 text-right ${row.diff && row.diff < 0 ? 'text-destructive' : 'text-success'}`}>{row.diff == null ? '—' : `R$ ${(row.diff >= 0 ? '+' : '')}${row.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                              <td className={`p-3 text-right ${row.diffPct && row.diffPct < 0 ? 'text-destructive' : 'text-success'}`}>{row.diffPct == null ? '—' : `${row.diffPct >= 0 ? '+' : ''}${row.diffPct.toFixed(2)}%`}</td>
+                              <td className="p-3 text-center">
+                                <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); } }} className="text-destructive hover:text-destructive">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                          {allHistory.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="p-4 text-center text-muted-foreground">Nenhum registro ainda. Clique em "+ Adicionar mês" ou "Registrar mês atual".</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
                   {allHistory.length > 0 && (
                     <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
                       <div>

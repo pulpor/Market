@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 function formatBR(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 
@@ -255,20 +256,22 @@ export function ReturnsForecastSection(props: Props) {
                   <Button onClick={addDividend} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
                 </div>
 
-                <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-                  {state.dividends.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum dividendo lançado.</p>}
-                  {state.dividends.slice().reverse().map(d => (
-                    <div key={d.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
-                      <span>{d.assetTicker}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-green-600">{formatBR(d.amount)}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeDividend(d.id)}>
-                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                <ScrollArea className="h-60 pr-4">
+                  <div className="space-y-1">
+                    {state.dividends.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum dividendo lançado.</p>}
+                    {state.dividends.slice().reverse().map(d => (
+                      <div key={d.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
+                        <span>{d.assetTicker}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-green-600">{formatBR(d.amount)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeDividend(d.id)}>
+                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               </AccordionContent>
             </AccordionItem>
 
@@ -302,23 +305,25 @@ export function ReturnsForecastSection(props: Props) {
                   </div>
                 </div>
 
-                <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-                  {state.freelas.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum freela lançado.</p>}
-                  {state.freelas.slice().reverse().map(f => (
-                    <div key={f.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{f.description || 'Sem descrição'}</span>
-                        <span className="text-xs text-muted-foreground">{f.date}</span>
+                <ScrollArea className="h-60 pr-4">
+                  <div className="space-y-1">
+                    {state.freelas.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum freela lançado.</p>}
+                    {state.freelas.slice().reverse().map(f => (
+                      <div key={f.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
+                        <div className="flex flex-col">
+                          <span className="font-medium">{f.description || 'Sem descrição'}</span>
+                          <span className="text-xs text-muted-foreground">{f.date}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-green-600">{formatBR(f.total || 0)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeFreela(f.id)}>
+                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-green-600">{formatBR(f.total || 0)}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeFreela(f.id)}>
-                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               </AccordionContent>
             </AccordionItem>
 
@@ -346,20 +351,22 @@ export function ReturnsForecastSection(props: Props) {
                   <Button onClick={addReceivable} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
                 </div>
 
-                <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-                  {state.receivables.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum registro.</p>}
-                  {state.receivables.slice().reverse().map(r => (
-                    <div key={r.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
-                      <span>{r.description}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-green-600">{formatBR(r.amount)}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeReceivable(r.id)}>
-                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                <ScrollArea className="h-60 pr-4">
+                  <div className="space-y-1">
+                    {state.receivables.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum registro.</p>}
+                    {state.receivables.slice().reverse().map(r => (
+                      <div key={r.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
+                        <span>{r.description}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-green-600">{formatBR(r.amount)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeReceivable(r.id)}>
+                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -410,20 +417,22 @@ export function ReturnsForecastSection(props: Props) {
                   <Button onClick={addExpense} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
                 </div>
 
-                <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
-                  {state.expenses.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhuma despesa extra lançada.</p>}
-                  {state.expenses.slice().reverse().map(e => (
-                    <div key={e.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
-                      <span>{e.description}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-red-600">{formatBR(e.amount)}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeExpense(e.id)}>
-                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                <ScrollArea className="h-60 pr-4">
+                  <div className="space-y-1">
+                    {state.expenses.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhuma despesa extra lançada.</p>}
+                    {state.expenses.slice().reverse().map(e => (
+                      <div key={e.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
+                        <span>{e.description}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-red-600">{formatBR(e.amount)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeExpense(e.id)}>
+                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
