@@ -269,7 +269,8 @@ const Index = () => {
         dy_ponderado: dy_ponderado_local,
         pl_total: pl_total_local,
       });
-      try { recordPortfolioSnapshot(valor_total_carteira_local); setHistoryVersion(v => v + 1); } catch { }
+      // REMOVIDO: Gravação automática de histórico para não sobrescrever edições manuais
+      // try { recordPortfolioSnapshot(valor_total_carteira_local); setHistoryVersion(v => v + 1); } catch { }
       await saveAssets(assetsToUse);
 
       if (!silent) {
@@ -515,13 +516,78 @@ const Index = () => {
                     <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                       <Calendar className="h-5 w-5" /> Histórico mensal do patrimônio
                     </h3>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-4">
+                      {summary && (
+                        <div className="hidden md:flex items-center gap-4 mr-2">
+                          {(() => {
+                            // Determina o valor atual: usa o histórico manual do mês atual se existir, senão usa o calculado
+                            const today = new Date();
+                            const currentKey = today.toISOString().slice(0, 7);
+                            const currentManualEntry = allHistory.find(h => h.month === currentKey);
+
+                            // Valor atual efetivo (Manual > Calculado)
+                            const currentValue = currentManualEntry ? currentManualEntry.value : summary.valor_total_carteira;
+
+                            // Custo total (aproximado pelo valor atual - lucro total)
+                            // Nota: Se o usuário editou o valor manual, o P/L muda. 
+                            // Assumindo que o custo base (investido) é (Valor Calculado - PL Calculado)
+                            const investedValue = summary.valor_total_carteira - summary.pl_total;
+
+                            // Novo P/L baseado no valor manual
+                            const effectivePL = currentValue - investedValue;
+                            const effectivePLPct = investedValue > 0 ? (effectivePL / investedValue) * 100 : 0;
+
+                            // Busca exata ou aproximada de 12 meses atrás
+                            const targetDate = new Date(today.getFullYear() - 1, today.getMonth(), 1);
+                            const targetKey = targetDate.toISOString().slice(0, 7);
+
+                            // Encontra o registro mais próximo de 12 meses atrás (ou exato)
+                            const pastEntry = allHistory.find(h => h.month === targetKey)
+                              || allHistory.find(h => h.month <= targetKey);
+
+                            return (
+                              <>
+                                {/* Rendimento Total */}
+                                <div className="text-right">
+                                  <p className="text-xs text-muted-foreground">Rendimento Total</p>
+                                  <p className={`text-sm font-bold ${effectivePL >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    {effectivePL >= 0 ? '+' : ''}
+                                    {effectivePLPct.toFixed(1)}%
+                                    <span className="text-xs font-normal ml-1 opacity-80">
+                                      (R$ {effectivePL.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                                    </span>
+                                  </p>
+                                </div>
+
+                                {/* Últimos 12 Meses */}
+                                {pastEntry && (
+                                  (() => {
+                                    const diff = currentValue - pastEntry.value;
+                                    const pct = pastEntry.value ? (diff / pastEntry.value) * 100 : 0;
+                                    return (
+                                      <div className="text-right border-l border-border pl-4">
+                                        <p className="text-xs text-muted-foreground">Últimos 12 Meses</p>
+                                        <p className={`text-sm font-bold ${diff >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                          {diff >= 0 ? '+' : ''}{pct.toFixed(1)}%
+                                          <span className="text-xs font-normal ml-1 opacity-80">
+                                            (R$ {diff.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                                          </span>
+                                        </p>
+                                      </div>
+                                    );
+                                  })()
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+
                       <Button variant="outline" size="sm" onClick={() => {
                         const m = prompt('Mês (YYYY-MM):');
                         const v = prompt('Valor (R$):');
                         if (m && v) { addMonth(m, parseFloat(v.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
                       }}>+ Adicionar mês</Button>
-                      <Button variant="outline" size="sm" onClick={() => { try { recordPortfolioSnapshot(summary.valor_total_carteira); setHistoryVersion(v => v + 1); } catch { } }}>Registrar mês atual</Button>
                     </div>
                   </div>
 
@@ -967,107 +1033,120 @@ const Index = () => {
               }
             </div>
 
-            {/* Paginação */}
-            {displayedAssets.length > itemsPerPage && (
-              <div className="flex items-center justify-center gap-2 mt-8">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Anterior
-                </Button>
 
-                <div className="flex gap-1">
-                  {Array.from({ length: Math.ceil(displayedAssets.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setCurrentPage(page)}
-                      className="min-w-[40px]"
-                    >
-                      {page}
-                    </Button>
-                  ))}
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedAssets.length / itemsPerPage), p + 1))}
-                  disabled={currentPage === Math.ceil(displayedAssets.length / itemsPerPage)}
-                >
-                  Próxima
-                </Button>
-              </div>
-            )}
           </div>
         )}
 
-        {/* Botão PDF acima dos lembretes */}
-        {calculatedAssets.length > 0 && summary && (
-          <div className="flex justify-end mb-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={async () => {
-                const jsPDF = (window as any).jspdf?.jsPDF;
-                if (!jsPDF) {
-                  alert("Biblioteca de PDF não carregada. Verifique sua conexão de internet.");
-                  return;
-                }
-                const doc = new jsPDF();
-                doc.setFontSize(18);
-                doc.text("Resumo da Carteira", 14, 18);
-                doc.setFontSize(12);
-                doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 28);
-                doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 36);
-                doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 44);
-                doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 52);
-                (doc as any).autoTable({
-                  startY: 60,
-                  head: [[
-                    "Ativo",
-                    "Tipo",
-                    "Índice",
-                    "Taxa",
-                    "Corretora",
-                    "Valor Atual",
-                    "Valor Aplicado",
-                    "Rentabilidade %",
-                    "P/L Posição"
-                  ]],
-                  body: calculatedAssets.map(a => {
-                    const indice = a.indice_referencia || '';
-                    const taxa = (typeof a.taxa_contratada === 'number' && a.taxa_contratada > 0)
-                      ? `${a.taxa_contratada.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
-                      : '';
-                    return [
-                      a.ticker_normalizado.replace('.SA', ''),
-                      a.tipo_ativo_manual || a.tipo_ativo || '',
-                      indice,
-                      taxa,
-                      a.corretora,
-                      `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-                      (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-                      `${a.variacao_percentual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}%`,
-                      `R$ ${a.pl_posicao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}`
-                    ];
-                  }),
-                  styles: { fontSize: 10 },
-                  headStyles: { fillColor: [44, 62, 80] },
-                  margin: { left: 14, right: 14 },
-                  theme: 'grid',
-                });
-                doc.save("carteira_dashboard_b3.pdf");
-              }}
-            >
-              <Download className="h-4 w-4" />
-              Baixar PDF da Carteira
-            </Button>
+        {/* Paginação e Botão PDF */}
+        {(displayedAssets.length > itemsPerPage || (calculatedAssets.length > 0 && summary)) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 items-center mt-8 gap-4 mb-6">
+
+            {/* Coluna Esquerda (Vazia para balanceamento) */}
+            <div className="hidden md:block"></div>
+
+            {/* Coluna Central (Paginação) */}
+            <div className="flex justify-center">
+              {displayedAssets.length > itemsPerPage && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Anterior
+                  </Button>
+
+                  <div className="flex gap-1">
+                    {Array.from({ length: Math.ceil(displayedAssets.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+                      <Button
+                        key={page}
+                        variant={currentPage === page ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(page)}
+                        className="min-w-[40px]"
+                      >
+                        {page}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedAssets.length / itemsPerPage), p + 1))}
+                    disabled={currentPage === Math.ceil(displayedAssets.length / itemsPerPage)}
+                  >
+                    Próxima
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Coluna Direita (Botão PDF) */}
+            <div className="flex justify-center md:justify-end">
+              {calculatedAssets.length > 0 && summary && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={async () => {
+                    const jsPDF = (window as any).jspdf?.jsPDF;
+                    if (!jsPDF) {
+                      alert("Biblioteca de PDF não carregada. Verifique sua conexão de internet.");
+                      return;
+                    }
+                    const doc = new jsPDF();
+                    doc.setFontSize(18);
+                    doc.text("Resumo da Carteira", 14, 18);
+                    doc.setFontSize(12);
+                    doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 28);
+                    doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 36);
+                    doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 44);
+                    doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 52);
+                    (doc as any).autoTable({
+                      startY: 60,
+                      head: [[
+                        "Ativo",
+                        "Tipo",
+                        "Índice",
+                        "Taxa",
+                        "Corretora",
+                        "Valor Atual",
+                        "Valor Aplicado",
+                        "Rentabilidade %",
+                        "P/L Posição"
+                      ]],
+                      body: calculatedAssets.map(a => {
+                        const indice = a.indice_referencia || '';
+                        const taxa = (typeof a.taxa_contratada === 'number' && a.taxa_contratada > 0)
+                          ? `${a.taxa_contratada.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+                          : '';
+                        return [
+                          a.ticker_normalizado.replace('.SA', ''),
+                          a.tipo_ativo_manual || a.tipo_ativo || '',
+                          indice,
+                          taxa,
+                          a.corretora,
+                          `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                          (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                          `${a.variacao_percentual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}%`,
+                          `R$ ${a.pl_posicao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}`
+                        ];
+                      }),
+                      styles: { fontSize: 10 },
+                      headStyles: { fillColor: [44, 62, 80] },
+                      margin: { left: 14, right: 14 },
+                      theme: 'grid',
+                    });
+                    doc.save("carteira_dashboard_b3.pdf");
+                  }}
+                >
+                  <Download className="h-4 w-4" />
+                  Baixar PDF da Carteira
+                </Button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1234,21 +1313,26 @@ const Index = () => {
 // Componente wrapper para integrar Dívidas e Previsão de Retornos
 
 function computeDebtForecast(state: DebtsState, month: string) {
-  // Financiamento
+  // Financiamento (soma de todos os financiamentos ativos)
   let financingParcela = 0;
-  if (state.financing) {
-    if (state.financing.parcela_atual && state.financing.parcela_atual > 0) {
-      financingParcela = state.financing.parcela_atual;
-    } else {
-      const P = state.financing.valor_financiado || 0;
-      const n = state.financing.prazo_total_meses || 0;
-      const i_a = state.financing.taxa_juros_nominal || 0;
-      const i_m = (i_a / 12) / 100;
-      if (P > 0 && n > 0) {
-        financingParcela = i_m > 0 ? (P * i_m) / (1 - Math.pow(1 + i_m, -n)) : P / n;
+  if (state.financings && state.financings.length > 0) {
+    financingParcela = state.financings.reduce((total, financing) => {
+      let parcela = 0;
+      if (financing.parcela_atual && financing.parcela_atual > 0) {
+        parcela = financing.parcela_atual;
+      } else {
+        const P = financing.valor_financiado || 0;
+        const n = financing.prazo_total_meses || 0;
+        const i_a = financing.taxa_juros_nominal || 0;
+        const i_m = (i_a / 12) / 100;
+        if (P > 0 && n > 0) {
+          parcela = i_m > 0 ? (P * i_m) / (1 - Math.pow(1 + i_m, -n)) : P / n;
+        }
       }
-    }
+      return total + parcela;
+    }, 0);
   }
+
   const cardMonthTotal = state.cardSpending.filter(e => e.month === month).reduce((s, e) => s + e.amount, 0);
   // Considera apenas "Outros" com vencimento no mês selecionado
   const othersTotal = state.others.reduce((s, o) => {
@@ -1257,6 +1341,8 @@ function computeDebtForecast(state: DebtsState, month: string) {
   }, 0);
   return { financingParcela, cardMonthTotal, othersTotal };
 }
+
+
 
 
 

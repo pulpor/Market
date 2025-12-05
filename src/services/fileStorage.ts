@@ -23,8 +23,8 @@ export async function loadAssets(): Promise<Asset[]> {
   // Tentativa 1: Supabase
   if (hasSupabase) {
     try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const user = session?.user;
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (user) {
         const { data, error } = await sb
           .from('assets')
@@ -52,7 +52,7 @@ export async function loadAssets(): Promise<Asset[]> {
           // Dados do Supabase já devem ter UUIDs válidos; ainda assim, validamos por segurança
           const fixed = list.map(a => (uuidValidate(a.id) && uuidVersion(a.id) === 4) ? a : { ...a, id: uuidv4() });
           if (JSON.stringify(fixed) !== JSON.stringify(list)) {
-            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch {}
+            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch { }
           }
           return fixed;
         } else {
@@ -78,7 +78,7 @@ export async function loadAssets(): Promise<Asset[]> {
           return ok ? a : { ...a, id: uuidv4() };
         });
         if (JSON.stringify(fixed) !== JSON.stringify(assets)) {
-          try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch {}
+          try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch { }
         }
         console.log(`✅ ${fixed.length} ativo(s) carregado(s) do localStorage`);
         return fixed;
@@ -106,7 +106,7 @@ export async function loadAssets(): Promise<Asset[]> {
             return ok ? a : { ...a, id: uuidv4() };
           });
           if (JSON.stringify(fixed) !== JSON.stringify(arr)) {
-            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch {}
+            try { localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(fixed)); } catch { }
           }
           console.log(`✅ ${fixed.length} ativo(s) carregado(s) do arquivo assets.json`);
           return fixed;
@@ -143,7 +143,7 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
   };
 
   const { normalized: assetsWithUuid, changed: idsChanged } = normalizeIds(assets);
-  
+
   // PROTEÇÃO 1: Backup automático no localStorage ANTES de qualquer operação
   const BACKUP_KEY = `${LOCAL_STORAGE_KEY}_backup`;
   try {
@@ -162,20 +162,50 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
     console.warn('   Isso NÃO vai deletar dados existentes (UPSERT protege)');
     console.warn('   Mas confirme se era isso que você queria.');
   }
-  
+
   // 1) Tenta Supabase primeiro se configurado
   if (hasSupabase) {
     try {
-        const { data: { session } } = await sb.auth.getSession();
-        const user = session?.user;
-      
+      const { data: { session } } = await sb.auth.getSession();
+      const user = session?.user;
+
       if (!user) {
         console.error("❌ Usuário não autenticado");
       } else {
-        console.log(`📤 Salvando ${assets.length} ativo(s) no Supabase usando UPSERT...`);
-        
-        // ESTRATÉGIA SEGURA: UPSERT ao invés de DELETE+INSERT
-        // Atualiza registros existentes OU insere novos, SEM deletar nada
+        console.log(`📤 Sincronizando ${assets.length} ativo(s) com Supabase...`);
+
+        // 1. Buscar IDs existentes no banco para este usuário
+        const { data: existingAssets, error: fetchError } = await sb
+          .from('assets')
+          .select('id')
+          .eq('user_id', user.id);
+
+        if (fetchError) {
+          console.error("❌ Erro ao buscar ativos existentes:", fetchError);
+        }
+
+        // 2. Identificar IDs que devem ser removidos (existem no banco mas não na lista atual)
+        const currentIds = new Set(assetsWithUuid.map(a => a.id));
+        const idsToDelete = existingAssets
+          ?.map((a: any) => a.id)
+          .filter((id: string) => !currentIds.has(id)) || [];
+
+        // 3. Remover ativos excluídos
+        if (idsToDelete.length > 0) {
+          console.log(`🗑️ Removendo ${idsToDelete.length} ativo(s) excluído(s)...`);
+          const { error: deleteError } = await sb
+            .from('assets')
+            .delete()
+            .in('id', idsToDelete);
+
+          if (deleteError) {
+            console.error("❌ Erro ao excluir ativos:", deleteError);
+          } else {
+            console.log("✅ Ativos excluídos com sucesso");
+          }
+        }
+
+        // 4. Atualizar/Inserir ativos atuais (UPSERT)
         if (assetsWithUuid.length > 0) {
           const { error: upsertError } = await sb
             .from('assets')
@@ -193,18 +223,19 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
                 indice_referencia: asset.indice_referencia ?? null,
                 taxa_contratada: asset.taxa_contratada ?? null,
                 data_vencimento: asset.data_vencimento ?? null,
+                data_aplicacao: (asset as any).data_aplicacao ?? null,
                 valor_atual_rf: asset.valor_atual_rf ?? null,
               })),
-              { 
-                onConflict: 'id',  // Se ID já existe, atualiza; senão insere
-                ignoreDuplicates: false 
+              {
+                onConflict: 'id',
+                ignoreDuplicates: false
               }
             );
 
           if (upsertError) {
             console.error("❌ Erro ao fazer UPSERT no Supabase:", upsertError);
             console.error("   Detalhes:", upsertError.message);
-            
+
             // PROTEÇÃO 3: Restaurar backup em caso de erro
             try {
               const backup = localStorage.getItem(BACKUP_KEY);
@@ -220,13 +251,13 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
             savedSomewhere = true;
           }
         } else {
-          console.log('ℹ️ Lista vazia - nenhuma operação realizada no Supabase');
-          savedSomewhere = true; // Considera sucesso pois não houve erro
+          console.log('ℹ️ Lista vazia - nenhuma inserção/atualização necessária');
+          savedSomewhere = true;
         }
       }
     } catch (error) {
       console.error("❌ Erro ao salvar no Supabase:", error);
-      
+
       // PROTEÇÃO 3: Restaurar backup em caso de erro crítico
       try {
         const backup = localStorage.getItem(BACKUP_KEY);
@@ -275,7 +306,7 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
       console.warn("⚠️ Servidor local não disponível (habilite com VITE_USE_LOCAL_STORAGE_SERVER=1)");
     }
   }
-  
+
   // Log final do resultado
   if (savedSomewhere) {
     console.log(`\n📊 Resumo do salvamento (${new Date().toLocaleString('pt-BR')}):`);
@@ -286,6 +317,6 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
   } else {
     console.error('❌ FALHA: Não foi possível salvar em nenhum destino!');
   }
-  
+
   return savedSomewhere;
 }

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Plus, Trash2, CreditCard, Home, ListChecks, Calendar as CalendarIcon, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Trash2, CreditCard, Home, ListChecks, Calendar as CalendarIcon, AlertCircle, ChevronDown, ChevronUp, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend, ReferenceLine } from "recharts";
 import {
@@ -211,7 +211,10 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
   }, [cardData]);
 
   const annotations = useMemo(() => {
-    return state.others.filter(o => !o.tem_vencimento || !o.vencimento).slice().reverse();
+    return state.others
+      .filter(o => !o.tem_vencimento || !o.vencimento)
+      .slice()
+      .sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
   }, [state.others]);
 
   // Handlers
@@ -254,6 +257,12 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
   const removeCardSpending = async (idx: number) => {
     const copy = [...state.cardSpending];
     copy.splice(idx, 1);
+    await save({ ...state, cardSpending: copy });
+  };
+
+  const updateCardSpending = async (idx: number, patch: Partial<CardSpendingEntry>) => {
+    const copy = [...state.cardSpending];
+    copy[idx] = { ...copy[idx], ...patch };
     await save({ ...state, cardSpending: copy });
   };
 
@@ -306,6 +315,9 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
 
   // Expand state for financings
   const [expandedFinancing, setExpandedFinancing] = useState<number | null>(0);
+
+  // Pagination state for credit card
+  const [cardPage, setCardPage] = useState(1);
 
   return (
     <div className="bg-card p-6 rounded-xl border border-border mt-8 shadow-sm">
@@ -543,12 +555,91 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
             <div>
               <h4 className="text-sm font-semibold mb-2">Lançamentos</h4>
               <div className="space-y-2">
-                {state.cardSpending.slice().reverse().map((e, idx) => (
-                  <div key={`${e.month}-${idx}`} className="flex items-center justify-between p-2 border rounded-md">
-                    <span className="text-sm">{e.month} — <strong>{formatCurrencyBR(e.amount)}</strong></span>
-                    <Button variant="ghost" size="icon" onClick={() => removeCardSpending(state.cardSpending.length - 1 - idx)}><Trash2 className="h-4 w-4" /></Button>
-                  </div>
-                ))}
+                {(() => {
+                  // Paginação com Ordenação por Data (Mais recente primeiro)
+                  // Mapeia para preservar o índice original para edição/remoção
+                  const indexedList = state.cardSpending.map((item, index) => ({ ...item, originalIndex: index }));
+
+                  // Ordena: Mês mais recente no topo (descendente)
+                  const sortedList = indexedList.sort((a, b) => b.month.localeCompare(a.month));
+
+                  const itemsPerPage = 12;
+                  const totalPages = Math.ceil(sortedList.length / itemsPerPage);
+                  // Garante que a página atual é válida
+                  const safePage = Math.min(Math.max(1, cardPage), Math.max(1, totalPages));
+                  if (safePage !== cardPage && totalPages > 0) setCardPage(safePage);
+
+                  const start = (safePage - 1) * itemsPerPage;
+                  const end = start + itemsPerPage;
+                  const currentItems = sortedList.slice(start, end);
+
+                  return (
+                    <>
+                      {currentItems.map((e) => {
+                        const realIndex = e.originalIndex;
+
+                        return (
+                          <div key={`${e.month}-${realIndex}`} className="flex items-center justify-between p-2 border rounded-md hover:bg-muted/30 transition-colors">
+                            <span className="text-sm">{e.month} — <strong>{formatCurrencyBR(e.amount)}</strong></span>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  const newVal = prompt(`Editar valor para ${e.month}:`, e.amount.toString());
+                                  if (newVal) {
+                                    const parsed = parseFloat(newVal.replace(/[^\d,.-]/g, '').replace(',', '.'));
+                                    if (!isNaN(parsed) && parsed > 0) {
+                                      updateCardSpending(realIndex, { amount: parsed });
+                                    }
+                                  }
+                                }}
+                                title="Editar valor"
+                              >
+                                <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeCardSpending(realIndex)}
+                                title="Excluir lançamento"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive/70 hover:text-destructive" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Controles de Paginação */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between text-xs text-muted-foreground mt-4 pt-2 border-t border-border">
+                          <div>
+                            Página {safePage} de {totalPages}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={safePage <= 1}
+                              onClick={() => setCardPage(p => Math.max(1, p - 1))}
+                            >
+                              Anterior
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={safePage >= totalPages}
+                              onClick={() => setCardPage(p => Math.min(totalPages, p + 1))}
+                            >
+                              Próxima
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}

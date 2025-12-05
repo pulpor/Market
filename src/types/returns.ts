@@ -27,10 +27,18 @@ export interface ReceivableEntry {
   expectedDate?: string; // YYYY-MM-DD
 }
 
+export interface ExpenseEntry {
+  id: string;
+  description: string;
+  amount: number; // R$
+  expectedDate?: string; // YYYY-MM-DD
+}
+
 export interface ReturnsForecastState {
   month: string; // YYYY-MM
   salary?: number; // salário variável do mês
   freelas: FreelanceEntry[];
   dividends: DividendForecast[];
   receivables: ReceivableEntry[];
+  expenses: ExpenseEntry[];
 }
