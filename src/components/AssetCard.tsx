@@ -16,7 +16,7 @@ interface AssetCardProps {
 
 const getCardStyle = (corretora: string): React.CSSProperties => {
   const baseColor = getBrokerColor(corretora as Corretora);
-  
+
   // Escurece a cor base para aumentar o contraste com o texto
   const darkenColor = (hex: string, percent: number): string => {
     const num = parseInt(hex.replace('#', ''), 16);
@@ -40,46 +40,46 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const isPositive = asset.variacao_percentual >= 0;
   const cardStyle = getCardStyle(asset.corretora);
-  
+
   // Detecta se é Renda Fixa
   const isRendaFixa = !!asset.tipo_ativo_manual;
-  
+
   // Para Renda Fixa, usa valor_atual_rf, senão usa valor_total
   const valorAtual = isRendaFixa ? (asset.valor_atual_rf || asset.valor_total) : asset.preco_atual;
   const valorInvestido = asset.preco_medio;
   const valorTotalAtivo = isRendaFixa ? (asset.valor_atual_rf || asset.valor_total) : asset.valor_total;
-  
+
   // Calcula rentabilidade para Renda Fixa
   const rentabilidade = isRendaFixa && valorInvestido > 0
     ? ((valorAtual - valorInvestido) / valorInvestido) * 100
     : asset.variacao_percentual;
 
-    const handleDelete = () => {
-      if (!onRemove) return;
-    
-      toast({
-        title: "Confirmar exclusão",
-        description: `Deseja realmente remover ${asset.ticker_normalizado.replace(".SA", "")} da carteira?`,
-        action: (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              onRemove(asset.id);
-              toast({
-                title: "Ativo removido",
-                description: `${asset.ticker_normalizado.replace(".SA", "")} foi removido da carteira`,
-              });
-            }}
-          >
-            Confirmar
-          </Button>
-        ),
-      });
-    };
+  const handleDelete = () => {
+    if (!onRemove) return;
+
+    toast({
+      title: "Confirmar exclusão",
+      description: `Deseja realmente remover ${asset.ticker_normalizado.replace(".SA", "")} da carteira?`,
+      action: (
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => {
+            onRemove(asset.id);
+            toast({
+              title: "Ativo removido",
+              description: `${asset.ticker_normalizado.replace(".SA", "")} foi removido da carteira`,
+            });
+          }}
+        >
+          Confirmar
+        </Button>
+      ),
+    });
+  };
 
   return (
-    <div 
+    <div
       style={cardStyle}
       className="rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative group"
     >
@@ -108,11 +108,11 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
           </Button>
         )}
       </div>
-      
+
       <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-2xl font-bold">{asset.ticker_normalizado.replace(".SA", "")}</h3>
-          <p className="text-white/80 text-sm">
+          <p className="text-white/80 text-sm flex items-center gap-2">
             {isRendaFixa ? (
               (() => {
                 const indice = asset.indice_referencia || asset.tipo_ativo_manual || '';
@@ -137,7 +137,19 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
                 return indice || asset.tipo_ativo_manual || 'Renda Fixa';
               })()
             ) : (
-              asset.setor || 'Setor desconhecido'
+              <>
+                <span className="font-medium bg-white/10 px-2 py-0.5 rounded text-xs">
+                  {asset.tipo_ativo || 'Ação'}
+                </span>
+                <span>•</span>
+                <span>{asset.corretora}</span>
+                {asset.setor && (
+                  <>
+                    <span>•</span>
+                    <span>{asset.setor}</span>
+                  </>
+                )}
+              </>
             )}
           </p>
         </div>
@@ -197,9 +209,9 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
       {/* Toggle para indicadores adicionais */}
       <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-4">
         <CollapsibleTrigger asChild>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             className="w-full text-white/80 hover:text-white hover:bg-white/10 transition-colors"
           >
             <span className="text-xs">Ver mais detalhes</span>
@@ -214,7 +226,7 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
             </div>
             <span className="text-sm font-semibold text-white">{formatPercent(asset.peso_carteira, 2)}</span>
           </div>
-          
+
           {!isRendaFixa && (
             <>
               <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
@@ -224,7 +236,7 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
                 </div>
                 <span className="text-sm font-semibold text-green-200">{formatPercent(asset.yoc, 2)}</span>
               </div>
-              
+
               <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-white/60" />
@@ -234,7 +246,7 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
               </div>
             </>
           )}
-          
+
           {isRendaFixa && (
             <>
               {asset.indice_referencia && (
@@ -246,7 +258,7 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
                   <span className="text-sm font-semibold text-white">{asset.indice_referencia}</span>
                 </div>
               )}
-              
+
               {asset.taxa_contratada && asset.taxa_contratada > 0 && (
                 <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -256,7 +268,7 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
                   <span className="text-sm font-semibold text-green-200">{formatPercent(asset.taxa_contratada, 2, true)}</span>
                 </div>
               )}
-              
+
               {asset.data_aplicacao && (
                 <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
                   <div className="flex items-center gap-2">

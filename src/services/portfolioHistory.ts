@@ -1,6 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 
-const LOCAL_KEY = "dashboard-b3-portfolio-history";
+const BASE_LOCAL_KEY = "dashboard-b3-portfolio-history";
+
+function getStorageKey(userId: string) {
+  return `${BASE_LOCAL_KEY}-${userId}`;
+}
 
 export type PortfolioMonth = {
   month: string; // YYYY-MM
@@ -22,80 +26,92 @@ async function getUserId(): Promise<string | null> {
 
 export async function recordPortfolioSnapshot(value: number, when: Date = new Date()): Promise<void> {
   const key = toMonthKey(when);
-  try {
-    // Local cache for instant UI
-    const raw = localStorage.getItem(LOCAL_KEY);
-    let map: Record<string, number> = raw ? JSON.parse(raw) : {};
-    map[key] = Number.isFinite(value) ? value : 0;
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(map));
-  } catch {}
+  const userId = await getUserId();
 
-  // Persist in Supabase
-  try {
-    const userId = await getUserId();
-    if (!userId) return;
-    await supabase
-      .from("portfolio_history")
-      .upsert({ user_id: userId, month: key, value }, { onConflict: "user_id,month" });
-  } catch {}
+  if (userId) {
+    const storageKey = getStorageKey(userId);
+    try {
+      // Local cache for instant UI
+      const raw = localStorage.getItem(storageKey);
+      let map: Record<string, number> = raw ? JSON.parse(raw) : {};
+      map[key] = Number.isFinite(value) ? value : 0;
+      localStorage.setItem(storageKey, JSON.stringify(map));
+    } catch { }
+
+    // Persist in Supabase
+    try {
+      await supabase
+        .from("portfolio_history")
+        .upsert({ user_id: userId, month: key, value }, { onConflict: "user_id,month" });
+    } catch { }
+  }
 }
 
 export async function updateMonthValue(month: string, value: number): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const storageKey = getStorageKey(userId);
   try {
-    const raw = localStorage.getItem(LOCAL_KEY);
+    const raw = localStorage.getItem(storageKey);
     let map: Record<string, number> = raw ? JSON.parse(raw) : {};
     map[month] = Number.isFinite(value) ? value : 0;
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(map));
-  } catch {}
+    localStorage.setItem(storageKey, JSON.stringify(map));
+  } catch { }
 
   try {
-    const userId = await getUserId();
-    if (!userId) return;
     await supabase
       .from("portfolio_history")
       .upsert({ user_id: userId, month, value }, { onConflict: "user_id,month" });
-  } catch {}
+  } catch { }
 }
 
 export async function deleteMonth(month: string): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const storageKey = getStorageKey(userId);
   try {
-    const raw = localStorage.getItem(LOCAL_KEY);
+    const raw = localStorage.getItem(storageKey);
     let map: Record<string, number> = raw ? JSON.parse(raw) : {};
     delete map[month];
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(map));
-  } catch {}
+    localStorage.setItem(storageKey, JSON.stringify(map));
+  } catch { }
 
   try {
-    const userId = await getUserId();
-    if (!userId) return;
     await supabase
       .from("portfolio_history")
       .delete()
       .eq("user_id", userId)
       .eq("month", month);
-  } catch {}
+  } catch { }
 }
 
 export async function addMonth(month: string, value: number): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const storageKey = getStorageKey(userId);
   try {
-    const raw = localStorage.getItem(LOCAL_KEY);
+    const raw = localStorage.getItem(storageKey);
     let map: Record<string, number> = raw ? JSON.parse(raw) : {};
     map[month] = Number.isFinite(value) ? value : 0;
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(map));
-  } catch {}
+    localStorage.setItem(storageKey, JSON.stringify(map));
+  } catch { }
 
   try {
-    const userId = await getUserId();
-    if (!userId) return;
     await supabase
       .from("portfolio_history")
       .upsert({ user_id: userId, month, value }, { onConflict: "user_id,month" });
-  } catch {}
+  } catch { }
 }
 
-export function getPortfolioHistory(): PortfolioMonth[] {
+export function getPortfolioHistory(userId?: string): PortfolioMonth[] {
+  if (!userId) return [];
+
+  const storageKey = getStorageKey(userId);
   try {
-    const raw = localStorage.getItem(LOCAL_KEY);
+    const raw = localStorage.getItem(storageKey);
     const map: Record<string, number> = raw ? JSON.parse(raw) : {};
     return Object.entries(map)
       .map(([month, value]) => ({ month, value }))
@@ -107,26 +123,35 @@ export async function syncHistoryFromDBToLocal(): Promise<void> {
   try {
     const userId = await getUserId();
     if (!userId) return;
+
+    const storageKey = getStorageKey(userId);
     const { data, error } = await supabase
       .from("portfolio_history")
       .select("month,value")
       .eq("user_id", userId)
       .order("month", { ascending: true });
+
     if (error || !data) return;
+
     const map: Record<string, number> = {};
     for (const row of data) { map[row.month] = row.value; }
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(map));
-  } catch {}
+    localStorage.setItem(storageKey, JSON.stringify(map));
+  } catch { }
 }
 
 // Dados iniciais da planilha fornecida pelo usuário
 export async function initializeWithUserData(): Promise<void> {
+  const userId = await getUserId();
+  if (!userId) return;
+
+  const storageKey = getStorageKey(userId);
+
   // Primeira tentativa: puxar do banco para o cache local
   await syncHistoryFromDBToLocal();
 
   // Se ainda não houver nada, opcionalmente semear dados iniciais locais
   try {
-    const raw = localStorage.getItem(LOCAL_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (raw) return; // já tem algo (DB ou local)
     const initialData: Record<string, number> = {
       '2025-01': 92375.06,
@@ -134,14 +159,14 @@ export async function initializeWithUserData(): Promise<void> {
       '2025-03': 100162.86,
       '2025-04': 105954.32,
     };
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(initialData));
-  } catch {}
+    localStorage.setItem(storageKey, JSON.stringify(initialData));
+  } catch { }
 }
 
 export type PortfolioHistoryWithDiff = PortfolioMonth & { diff?: number; diffPct?: number };
 
-export function getHistoryWithDiff(): PortfolioHistoryWithDiff[] {
-  const hist = getPortfolioHistory();
+export function getHistoryWithDiff(userId?: string): PortfolioHistoryWithDiff[] {
+  const hist = getPortfolioHistory(userId);
   const out: PortfolioHistoryWithDiff[] = [];
   for (let i = 0; i < hist.length; i++) {
     const cur = hist[i];

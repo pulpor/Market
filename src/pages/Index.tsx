@@ -11,7 +11,7 @@ import { DebtsState } from "@/types/debt";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid, History, Trash2 } from "lucide-react";
+import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid, History, Trash2, PlusCircle, Wallet, List, CreditCard } from "lucide-react";
 import { getBrokerColor, BROKER_LIST } from "@/utils/brokerColors";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,7 +20,9 @@ import { Button } from "@/components/ui/button";
 import { ArrowDownWideNarrow, ArrowUpWideNarrow, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { getHistoryWithDiff, recordPortfolioSnapshot, updateMonthValue, deleteMonth, addMonth, initializeWithUserData } from "@/services/portfolioHistory";
 // Removido import do util PDF
 
@@ -36,7 +38,7 @@ const Index = () => {
   const [historyVersion, setHistoryVersion] = useState(0);
   const [histPage, setHistPage] = useState(1);
   const histPerPage = 12;
-  const allHistory = useMemo(() => getHistoryWithDiff(), [historyVersion]);
+  const allHistory = useMemo(() => getHistoryWithDiff(user?.id), [historyVersion, user?.id]);
   const histTotalPages = Math.max(1, Math.ceil(allHistory.length / histPerPage));
   const histEnd = allHistory.length - (histPage - 1) * histPerPage;
   const histStart = Math.max(0, histEnd - histPerPage);
@@ -317,7 +319,14 @@ const Index = () => {
     const sorted = [...filtered].sort((a, b) => {
       const av = a[sortKey];
       const bv = b[sortKey];
-      const comp = (typeof av === "number" && typeof bv === "number") ? av - bv : 0;
+
+      let comp = 0;
+      if (typeof av === "string" && typeof bv === "string") {
+        comp = av.localeCompare(bv);
+      } else if (typeof av === "number" && typeof bv === "number") {
+        comp = av - bv;
+      }
+
       return sortDir === "asc" ? comp : -comp;
     });
 
@@ -406,909 +415,992 @@ const Index = () => {
         {/* Indicadores de Mercado */}
         <MarketBar />
 
-        {/* Formulário */}
-        <AssetForm
-          onAddAndCalculate={handleAddAndCalculate}
-          isCalculating={isCalculating}
-          editingAsset={editingAsset}
-          onCancelEdit={() => setEditingAsset(null)}
-        />
 
-        {/* Resumo da Carteira */}
-        {summary && (
-          <div className="bg-card p-6 rounded-xl border border-border">
-            <Tabs defaultValue="total" className="w-full">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-foreground">Resumo da Carteira</h2>
-                <TabsList className="grid grid-cols-5 w-auto">
-                  <TabsTrigger value="total">
-                    <BarChart3 className="h-4 w-4 mr-2" />
-                    Total
-                  </TabsTrigger>
-                  <TabsTrigger value="corretora">
-                    <Building2 className="h-4 w-4 mr-2" />
-                    Por Corretora
-                  </TabsTrigger>
-                  <TabsTrigger value="tipo">
-                    <Layers className="h-4 w-4 mr-2" />
-                    Por Tipo
-                  </TabsTrigger>
-                  <TabsTrigger value="setor">
-                    <LayoutGrid className="h-4 w-4 mr-2" />
-                    Por Setor
-                  </TabsTrigger>
-                  <TabsTrigger value="historico">
-                    <History className="h-4 w-4 mr-2" />
-                    Histórico
-                  </TabsTrigger>
-                </TabsList>
+
+        <Accordion type="multiple" defaultValue={["add-asset", "summary", "my-assets", "reminders", "debts", "returns", "charts"]} className="w-full space-y-4">
+
+          {/* 1. Adicionar Ativo */}
+          <AccordionItem value="add-asset" className="border-none bg-transparent px-0">
+            <AccordionTrigger className="hover:no-underline py-4">
+              <div className="flex items-center gap-3">
+                <div className="p-1 bg-primary/10 rounded-lg">
+                  <PlusCircle className="h-5 w-5 text-primary" />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">Adicionar Ativo</h2>
               </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2 pb-6">
+              <AssetForm
+                onAddAndCalculate={handleAddAndCalculate}
+                isCalculating={isCalculating}
+                editingAsset={editingAsset}
+                onCancelEdit={() => setEditingAsset(null)}
+              />
+            </AccordionContent>
+          </AccordionItem>
 
-              <TabsContent value="total">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                  <div>
-                    <p className="text-muted-foreground text-sm mb-1">Valor Total</p>
-                    <p className="text-3xl font-bold text-foreground">
-                      R$ {summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
+          {/* 2. Resumo da Carteira */}
+          {summary && (
+            <AccordionItem value="summary" className="border-none bg-transparent px-0">
+              <AccordionTrigger className="hover:no-underline py-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-1 bg-blue-500/10 rounded-lg">
+                    <Wallet className="h-5 w-5 text-blue-500" />
                   </div>
-                  <div>
-                    <p className="text-muted-foreground text-sm mb-1">DY Médio Ponderado</p>
-                    <p className="text-3xl font-bold text-success">
-                      {summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-sm mb-1">Crescimento Médio</p>
-                    <p
-                      className={`text-3xl font-bold ${calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0
-                        ? "text-success"
-                        : "text-destructive"
-                        }`}
-                    >
-                      {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0 ? "+" : "")}
-                      {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-sm mb-1">P/L Total</p>
-                    <p
-                      className={`text-3xl font-bold ${summary.pl_total >= 0 ? "text-success" : "text-destructive"
-                        }`}
-                    >
-                      R$ {summary.pl_total >= 0 ? "+" : ""}
-                      {summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
+                  <h2 className="text-2xl font-bold text-foreground">Resumo da Carteira</h2>
                 </div>
-
-                {/* Previsão de Dividendos */}
-                <div className="border-t border-border pt-6 mt-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-success" />
-                    Previsão de Dividendos
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-success/5 p-4 rounded-lg border border-success/20">
-                      <p className="text-muted-foreground text-sm mb-1">Projeção Anual</p>
-                      <p className="text-2xl font-bold text-success">
-                        R$ {calculatedAssets.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Baseado no DY atual × Valor investido
-                      </p>
-                    </div>
-                    <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
-                      <p className="text-muted-foreground text-sm mb-1">Projeção Mensal (média)</p>
-                      <p className="text-2xl font-bold text-primary">
-                        R$ {(calculatedAssets.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Projeção anual ÷ 12 meses
-                      </p>
-                    </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-6">
+                <Tabs defaultValue="total" className="w-full">
+                  <div className="flex items-center justify-end mb-6">
+                    <TabsList className="grid grid-cols-5 w-auto">
+                      <TabsTrigger value="total">
+                        <BarChart3 className="h-4 w-4 mr-2" />
+                        Total
+                      </TabsTrigger>
+                      <TabsTrigger value="corretora">
+                        <Building2 className="h-4 w-4 mr-2" />
+                        Por Corretora
+                      </TabsTrigger>
+                      <TabsTrigger value="tipo">
+                        <Layers className="h-4 w-4 mr-2" />
+                        Por Tipo
+                      </TabsTrigger>
+                      <TabsTrigger value="setor">
+                        <LayoutGrid className="h-4 w-4 mr-2" />
+                        Por Setor
+                      </TabsTrigger>
+                      <TabsTrigger value="historico">
+                        <History className="h-4 w-4 mr-2" />
+                        Histórico
+                      </TabsTrigger>
+                    </TabsList>
                   </div>
-                </div>
-              </TabsContent>
 
-              <TabsContent value="historico">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                      <Calendar className="h-5 w-5" /> Histórico mensal do patrimônio
-                    </h3>
-                    <div className="flex items-center gap-4">
-                      {summary && (
-                        <div className="hidden md:flex items-center gap-4 mr-2">
-                          {(() => {
-                            // Determina o valor atual: usa o histórico manual do mês atual se existir, senão usa o calculado
-                            const today = new Date();
-                            const currentKey = today.toISOString().slice(0, 7);
-                            const currentManualEntry = allHistory.find(h => h.month === currentKey);
+                  <TabsContent value="total">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                      <div>
+                        <p className="text-muted-foreground text-sm mb-1">Valor Total</p>
+                        <p className="text-3xl font-bold text-foreground">
+                          R$ {summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-sm mb-1">DY Médio Ponderado</p>
+                        <p className="text-3xl font-bold text-success">
+                          {summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-sm mb-1">Crescimento Médio</p>
+                        <p
+                          className={`text-3xl font-bold ${calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0
+                            ? "text-success"
+                            : "text-destructive"
+                            }`}
+                        >
+                          {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length >= 0 ? "+" : "")}
+                          {(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-sm mb-1">P/L Total</p>
+                        <p
+                          className={`text-3xl font-bold ${summary.pl_total >= 0 ? "text-success" : "text-destructive"
+                            }`}
+                        >
+                          R$ {summary.pl_total >= 0 ? "+" : ""}
+                          {summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    </div>
 
-                            // Valor atual efetivo (Manual > Calculado)
-                            const currentValue = currentManualEntry ? currentManualEntry.value : summary.valor_total_carteira;
+                    {/* Previsão de Dividendos */}
+                    <div className="border-t border-border pt-6 mt-6">
+                      <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-success" />
+                        Previsão de Dividendos
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-success/5 p-4 rounded-lg border border-success/20">
+                          <p className="text-muted-foreground text-sm mb-1">Projeção Anual</p>
+                          <p className="text-2xl font-bold text-success">
+                            R$ {calculatedAssets.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Baseado no DY atual × Valor investido
+                          </p>
+                        </div>
+                        <div className="bg-primary/5 p-4 rounded-lg border border-primary/20">
+                          <p className="text-muted-foreground text-sm mb-1">Projeção Mensal (média)</p>
+                          <p className="text-2xl font-bold text-primary">
+                            R$ {(calculatedAssets.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0) / 12).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Projeção anual ÷ 12 meses
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </TabsContent>
 
-                            // Custo total (aproximado pelo valor atual - lucro total)
-                            // Nota: Se o usuário editou o valor manual, o P/L muda. 
-                            // Assumindo que o custo base (investido) é (Valor Calculado - PL Calculado)
-                            const investedValue = summary.valor_total_carteira - summary.pl_total;
+                  <TabsContent value="historico">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                          <Calendar className="h-5 w-5" /> Histórico mensal do patrimônio
+                        </h3>
+                        <div className="flex items-center gap-4">
+                          {summary && (
+                            <div className="hidden md:flex items-center gap-4 mr-2">
+                              {(() => {
+                                // Determina o valor atual: usa o histórico manual do mês atual se existir, senão usa o calculado
+                                const today = new Date();
+                                const currentKey = today.toISOString().slice(0, 7);
+                                const currentManualEntry = allHistory.find(h => h.month === currentKey);
 
-                            // Novo P/L baseado no valor manual
-                            const effectivePL = currentValue - investedValue;
-                            const effectivePLPct = investedValue > 0 ? (effectivePL / investedValue) * 100 : 0;
+                                // Valor atual efetivo (Manual > Calculado)
+                                const currentValue = currentManualEntry ? currentManualEntry.value : summary.valor_total_carteira;
 
-                            // Busca exata ou aproximada de 12 meses atrás
-                            const targetDate = new Date(today.getFullYear() - 1, today.getMonth(), 1);
-                            const targetKey = targetDate.toISOString().slice(0, 7);
+                                // Custo total (aproximado pelo valor atual - lucro total)
+                                // Nota: Se o usuário editou o valor manual, o P/L muda. 
+                                // Assumindo que o custo base (investido) é (Valor Calculado - PL Calculado)
+                                const investedValue = summary.valor_total_carteira - summary.pl_total;
 
-                            // Encontra o registro mais próximo de 12 meses atrás (ou exato)
-                            const pastEntry = allHistory.find(h => h.month === targetKey)
-                              || allHistory.find(h => h.month <= targetKey);
+                                // Novo P/L baseado no valor manual
+                                const effectivePL = currentValue - investedValue;
+                                const effectivePLPct = investedValue > 0 ? (effectivePL / investedValue) * 100 : 0;
 
-                            return (
-                              <>
-                                {/* Rendimento Total */}
-                                <div className="text-right">
-                                  <p className="text-xs text-muted-foreground">Rendimento Total</p>
-                                  <p className={`text-sm font-bold ${effectivePL >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                    {effectivePL >= 0 ? '+' : ''}
-                                    {effectivePLPct.toFixed(1)}%
-                                    <span className="text-xs font-normal ml-1 opacity-80">
-                                      (R$ {effectivePL.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
-                                    </span>
-                                  </p>
-                                </div>
+                                // Busca exata ou aproximada de 12 meses atrás
+                                const targetDate = new Date(today.getFullYear() - 1, today.getMonth(), 1);
+                                const targetKey = targetDate.toISOString().slice(0, 7);
 
-                                {/* Últimos 12 Meses */}
-                                {pastEntry && (
-                                  (() => {
-                                    const diff = currentValue - pastEntry.value;
-                                    const pct = pastEntry.value ? (diff / pastEntry.value) * 100 : 0;
-                                    return (
-                                      <div className="text-right border-l border-border pl-4">
-                                        <p className="text-xs text-muted-foreground">Últimos 12 Meses</p>
-                                        <p className={`text-sm font-bold ${diff >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                          {diff >= 0 ? '+' : ''}{pct.toFixed(1)}%
-                                          <span className="text-xs font-normal ml-1 opacity-80">
-                                            (R$ {diff.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
-                                          </span>
-                                        </p>
-                                      </div>
-                                    );
-                                  })()
-                                )}
-                              </>
-                            );
-                          })()}
+                                // Encontra o registro mais próximo de 12 meses atrás (ou exato)
+                                const pastEntry = allHistory.find(h => h.month === targetKey)
+                                  || allHistory.find(h => h.month <= targetKey);
+
+                                return (
+                                  <>
+                                    {/* Rendimento Total */}
+                                    <div className="text-right">
+                                      <p className="text-xs text-muted-foreground">Rendimento Total</p>
+                                      <p className={`text-sm font-bold ${effectivePL >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                        {effectivePL >= 0 ? '+' : ''}
+                                        {effectivePLPct.toFixed(1)}%
+                                        <span className="text-xs font-normal ml-1 opacity-80">
+                                          (R$ {effectivePL.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                                        </span>
+                                      </p>
+                                    </div>
+
+                                    {/* Últimos 12 Meses */}
+                                    {pastEntry && (
+                                      (() => {
+                                        const diff = currentValue - pastEntry.value;
+                                        const pct = pastEntry.value ? (diff / pastEntry.value) * 100 : 0;
+                                        return (
+                                          <div className="text-right border-l border-border pl-4">
+                                            <p className="text-xs text-muted-foreground">Últimos 12 Meses</p>
+                                            <p className={`text-sm font-bold ${diff >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                              {diff >= 0 ? '+' : ''}{pct.toFixed(1)}%
+                                              <span className="text-xs font-normal ml-1 opacity-80">
+                                                (R$ {diff.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })})
+                                              </span>
+                                            </p>
+                                          </div>
+                                        );
+                                      })()
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          )}
+
+                          <Button variant="outline" size="sm" onClick={() => {
+                            const m = prompt('Mês (YYYY-MM):');
+                            const v = prompt('Valor (R$):');
+                            if (m && v) { addMonth(m, parseFloat(v.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
+                          }}>+ Adicionar mês</Button>
+                        </div>
+                      </div>
+
+                      <ScrollArea className="w-full whitespace-nowrap rounded-lg border border-border">
+                        <div className="w-full">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="text-left p-3">Mês</th>
+                                <th className="text-right p-3">Valor</th>
+                                <th className="text-right p-3">Diferença</th>
+                                <th className="text-right p-3">% M/M</th>
+                                <th className="text-center p-3">Ações</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pageHistory.map((row) => (
+                                <tr key={row.month} className="border-t border-border/60 hover:bg-muted/30">
+                                  <td className="p-3">{row.month}</td>
+                                  <td className="p-3 text-right">
+                                    <button
+                                      className="hover:underline text-left w-full text-right"
+                                      onClick={() => {
+                                        const newVal = prompt(`Editar valor de ${row.month}:`, row.value.toString());
+                                        if (newVal) { updateMonthValue(row.month, parseFloat(newVal.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
+                                      }}
+                                    >
+                                      R$ {row.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </button>
+                                  </td>
+                                  <td className={`p-3 text-right ${row.diff && row.diff < 0 ? 'text-destructive' : 'text-success'}`}>{row.diff == null ? '—' : `R$ ${(row.diff >= 0 ? '+' : '')}${row.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                                  <td className={`p-3 text-right ${row.diffPct && row.diffPct < 0 ? 'text-destructive' : 'text-success'}`}>{row.diffPct == null ? '—' : `${row.diffPct >= 0 ? '+' : ''}${row.diffPct.toFixed(2)}%`}</td>
+                                  <td className="p-3 text-center">
+                                    <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); } }} className="text-destructive hover:text-destructive">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                              {allHistory.length === 0 && (
+                                <tr>
+                                  <td colSpan={5} className="p-4 text-center text-muted-foreground">Nenhum registro ainda. Clique em "+ Adicionar mês" ou "Registrar mês atual".</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        <ScrollBar orientation="horizontal" />
+                      </ScrollArea>
+                      {allHistory.length > 0 && (
+                        <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
+                          <div>
+                            Mostrando {Math.min(allHistory.length, histStart + 1)}–{histEnd} de {allHistory.length}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" disabled={histPage >= histTotalPages} onClick={() => setHistPage(p => Math.min(histTotalPages, p + 1))}>Anterior</Button>
+                            <span>Página {histPage} / {histTotalPages}</span>
+                            <Button variant="outline" size="sm" disabled={histPage <= 1} onClick={() => setHistPage(p => Math.max(1, p - 1))}>Próxima</Button>
+                          </div>
                         </div>
                       )}
-
-                      <Button variant="outline" size="sm" onClick={() => {
-                        const m = prompt('Mês (YYYY-MM):');
-                        const v = prompt('Valor (R$):');
-                        if (m && v) { addMonth(m, parseFloat(v.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
-                      }}>+ Adicionar mês</Button>
                     </div>
-                  </div>
+                  </TabsContent>
 
-                  <ScrollArea className="w-full whitespace-nowrap rounded-lg border border-border">
-                    <div className="w-full">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50">
-                          <tr>
-                            <th className="text-left p-3">Mês</th>
-                            <th className="text-right p-3">Valor</th>
-                            <th className="text-right p-3">Diferença</th>
-                            <th className="text-right p-3">% M/M</th>
-                            <th className="text-center p-3">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pageHistory.map((row) => (
-                            <tr key={row.month} className="border-t border-border/60 hover:bg-muted/30">
-                              <td className="p-3">{row.month}</td>
-                              <td className="p-3 text-right">
-                                <button
-                                  className="hover:underline text-left w-full text-right"
-                                  onClick={() => {
-                                    const newVal = prompt(`Editar valor de ${row.month}:`, row.value.toString());
-                                    if (newVal) { updateMonthValue(row.month, parseFloat(newVal.replace(/[^\d,.-]/g, '').replace(',', '.'))); setHistoryVersion(h => h + 1); }
-                                  }}
-                                >
-                                  R$ {row.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </button>
-                              </td>
-                              <td className={`p-3 text-right ${row.diff && row.diff < 0 ? 'text-destructive' : 'text-success'}`}>{row.diff == null ? '—' : `R$ ${(row.diff >= 0 ? '+' : '')}${row.diff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                              <td className={`p-3 text-right ${row.diffPct && row.diffPct < 0 ? 'text-destructive' : 'text-success'}`}>{row.diffPct == null ? '—' : `${row.diffPct >= 0 ? '+' : ''}${row.diffPct.toFixed(2)}%`}</td>
-                              <td className="p-3 text-center">
-                                <Button variant="ghost" size="sm" onClick={() => { if (confirm(`Deletar ${row.month}?`)) { deleteMonth(row.month); setHistoryVersion(h => h + 1); } }} className="text-destructive hover:text-destructive">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                          {allHistory.length === 0 && (
-                            <tr>
-                              <td colSpan={5} className="p-4 text-center text-muted-foreground">Nenhum registro ainda. Clique em "+ Adicionar mês" ou "Registrar mês atual".</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                  <TabsContent value="corretora">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                      {BROKER_LIST.map(corretora => {
+                        const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
+                        const valorTotal = assetsCorretora.reduce((sum, a) => sum + a.valor_total, 0);
+                        const dyPonderado = assetsCorretora.reduce((sum, a) => {
+                          const participacao = a.valor_total / valorTotal;
+                          return sum + a.dividend_yield * participacao;
+                        }, 0);
+                        const crescimentoMedio = assetsCorretora.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsCorretora.length;
+                        const plTotal = assetsCorretora.reduce((sum, a) => sum + a.pl_posicao, 0);
+
+                        return valorTotal > 0 ? (
+                          <div key={corretora} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
+                            <div className="flex items-center gap-2 mb-4">
+                              <Building2 className="h-5 w-5 text-primary" />
+                              <h4 className="font-bold text-lg text-foreground">{corretora}</h4>
+                            </div>
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Valor Total</p>
+                                <p className="text-xl font-bold text-foreground">
+                                  R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">DY Médio</p>
+                                  <p className="text-sm font-semibold text-success">
+                                    {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Crescim.</p>
+                                  <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">P/L</p>
+                                  <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null;
+                      })}
                     </div>
-                    <ScrollBar orientation="horizontal" />
-                  </ScrollArea>
-                  {allHistory.length > 0 && (
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mt-2">
-                      <div>
-                        Mostrando {Math.min(allHistory.length, histStart + 1)}–{histEnd} de {allHistory.length}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" disabled={histPage >= histTotalPages} onClick={() => setHistPage(p => Math.min(histTotalPages, p + 1))}>Anterior</Button>
-                        <span>Página {histPage} / {histTotalPages}</span>
-                        <Button variant="outline" size="sm" disabled={histPage <= 1} onClick={() => setHistPage(p => Math.max(1, p - 1))}>Próxima</Button>
+
+                    {/* Previsão de Dividendos por Corretora */}
+                    <div className="border-t border-border pt-6 mt-6">
+                      <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-success" />
+                        Previsão de Dividendos
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {BROKER_LIST.map(corretora => {
+                          const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
+                          const projecaoAnual = assetsCorretora.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
+                          const projecaoMensal = projecaoAnual / 12;
+
+                          const valorTotal = assetsCorretora.reduce((sum, a) => sum + a.valor_total, 0);
+
+                          return valorTotal > 0 ? (
+                            <div key={corretora} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Building2 className="h-4 w-4 text-muted-foreground" />
+                                <h4 className="font-semibold text-foreground">{corretora}</h4>
+                              </div>
+                              <div className="space-y-2">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Anual</p>
+                                  <p className="text-lg font-bold text-success">
+                                    R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Mensal</p>
+                                  <p className="text-sm font-semibold text-primary">
+                                    R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null;
+                        })}
                       </div>
                     </div>
-                  )}
-                </div>
-              </TabsContent>
+                  </TabsContent>
 
-              <TabsContent value="corretora">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  {BROKER_LIST.map(corretora => {
-                    const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
-                    const valorTotal = assetsCorretora.reduce((sum, a) => sum + a.valor_total, 0);
-                    const dyPonderado = assetsCorretora.reduce((sum, a) => {
-                      const participacao = a.valor_total / valorTotal;
-                      return sum + a.dividend_yield * participacao;
-                    }, 0);
-                    const crescimentoMedio = assetsCorretora.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsCorretora.length;
-                    const plTotal = assetsCorretora.reduce((sum, a) => sum + a.pl_posicao, 0);
+                  <TabsContent value="tipo">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                      {Array.from(new Set(calculatedAssets.map(a => a.tipo_ativo || 'Outro'))).sort().map(tipo => {
+                        const assetsTipo = calculatedAssets.filter(a => (a.tipo_ativo || 'Outro') === tipo);
+                        const valorTotal = assetsTipo.reduce((sum, a) => sum + a.valor_total, 0);
+                        const dyPonderado = assetsTipo.reduce((sum, a) => {
+                          const participacao = a.valor_total / valorTotal;
+                          return sum + a.dividend_yield * participacao;
+                        }, 0);
+                        const crescimentoMedio = assetsTipo.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsTipo.length;
+                        const plTotal = assetsTipo.reduce((sum, a) => sum + a.pl_posicao, 0);
 
-                    return (
-                      <div key={corretora} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2 mb-4">
-                          <Building2 className="h-5 w-5 text-primary" />
-                          <h4 className="font-bold text-lg text-foreground">{corretora}</h4>
-                        </div>
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Valor Total</p>
-                            <p className="text-xl font-bold text-foreground">
-                              R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
+                        return (
+                          <div key={tipo} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
+                            <div className="flex items-center gap-2 mb-4">
+                              <TrendingUp className="h-5 w-5 text-primary" />
+                              <h4 className="font-bold text-lg text-foreground">{tipo}</h4>
+                            </div>
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Valor Total</p>
+                                <p className="text-xl font-bold text-foreground">
+                                  R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">DY Médio</p>
+                                  <p className="text-sm font-semibold text-success">
+                                    {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Crescim.</p>
+                                  <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">P/L</p>
+                                  <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">DY Médio</p>
-                              <p className="text-sm font-semibold text-success">
-                                {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Crescim.</p>
-                              <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">P/L</p>
-                              <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Previsão de Dividendos por Tipo */}
+                    <div className="border-t border-border pt-6 mt-6">
+                      <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-success" />
+                        Previsão de Dividendos
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array.from(new Set(calculatedAssets.map(a => a.tipo_ativo || 'Outro')))
+                          .sort()
+                          .filter(tipo => !['LCI/LCA', 'Previdência', 'Tesouro Direto'].includes(tipo))
+                          .map(tipo => {
+                            const assetsTipo = calculatedAssets.filter(a => (a.tipo_ativo || 'Outro') === tipo);
+                            const projecaoAnual = assetsTipo.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
+                            const projecaoMensal = projecaoAnual / 12;
+
+                            return (
+                              <div key={tipo} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                                  <h4 className="font-semibold text-foreground">{tipo}</h4>
+                                </div>
+                                <div className="space-y-2">
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Anual</p>
+                                    <p className="text-lg font-bold text-success">
+                                      R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-muted-foreground">Mensal</p>
+                                    <p className="text-sm font-semibold text-primary">
+                                      R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  </TabsContent>
 
-                {/* Previsão de Dividendos por Corretora */}
-                <div className="border-t border-border pt-6 mt-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-success" />
-                    Previsão de Dividendos
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {BROKER_LIST.map(corretora => {
-                      const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
-                      const projecaoAnual = assetsCorretora.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
-                      const projecaoMensal = projecaoAnual / 12;
+                  <TabsContent value="setor">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                      {Array.from(new Set(calculatedAssets.map(a => a.setor || 'Outros'))).sort().map(setor => {
+                        const assetsSetor = calculatedAssets.filter(a => (a.setor || 'Outros') === setor);
+                        const valorTotal = assetsSetor.reduce((sum, a) => sum + a.valor_total, 0);
+                        const dyPonderado = assetsSetor.reduce((sum, a) => {
+                          const participacao = a.valor_total / valorTotal;
+                          return sum + a.dividend_yield * participacao;
+                        }, 0);
+                        const crescimentoMedio = assetsSetor.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsSetor.length;
+                        const plTotal = assetsSetor.reduce((sum, a) => sum + a.pl_posicao, 0);
 
-                      return (
-                        <div key={corretora} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            <h4 className="font-semibold text-foreground">{corretora}</h4>
-                          </div>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">Anual</p>
-                              <p className="text-lg font-bold text-success">
-                                R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
+                        return valorTotal > 0 ? (
+                          <div key={setor} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
+                            <div className="flex items-center gap-2 mb-4">
+                              <TrendingUp className="h-5 w-5 text-primary" />
+                              <h4 className="font-bold text-lg text-foreground">{setor}</h4>
                             </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Mensal</p>
-                              <p className="text-sm font-semibold text-primary">
-                                R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="tipo">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  {Array.from(new Set(calculatedAssets.map(a => a.tipo_ativo || 'Outro'))).sort().map(tipo => {
-                    const assetsTipo = calculatedAssets.filter(a => (a.tipo_ativo || 'Outro') === tipo);
-                    const valorTotal = assetsTipo.reduce((sum, a) => sum + a.valor_total, 0);
-                    const dyPonderado = assetsTipo.reduce((sum, a) => {
-                      const participacao = a.valor_total / valorTotal;
-                      return sum + a.dividend_yield * participacao;
-                    }, 0);
-                    const crescimentoMedio = assetsTipo.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsTipo.length;
-                    const plTotal = assetsTipo.reduce((sum, a) => sum + a.pl_posicao, 0);
-
-                    return (
-                      <div key={tipo} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2 mb-4">
-                          <TrendingUp className="h-5 w-5 text-primary" />
-                          <h4 className="font-bold text-lg text-foreground">{tipo}</h4>
-                        </div>
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Valor Total</p>
-                            <p className="text-xl font-bold text-foreground">
-                              R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">DY Médio</p>
-                              <p className="text-sm font-semibold text-success">
-                                {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Crescim.</p>
-                              <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">P/L</p>
-                              <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </p>
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Valor Total</p>
+                                <p className="text-xl font-bold text-foreground">
+                                  R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">DY Médio</p>
+                                  <p className="text-sm font-semibold text-success">
+                                    {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Crescim.</p>
+                                  <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">P/L</p>
+                                  <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
+                                    R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        ) : null;
+                      })}
+                    </div>
+
+                    {/* Previsão de Dividendos por Setor */}
+                    <div className="border-t border-border pt-6 mt-6">
+                      <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-success" />
+                        Previsão de Dividendos
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array.from(new Set(calculatedAssets.map(a => a.setor || 'Outros'))).sort().map(setor => {
+                          const assetsSetor = calculatedAssets.filter(a => (a.setor || 'Outros') === setor);
+                          const projecaoAnual = assetsSetor.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
+                          const projecaoMensal = projecaoAnual / 12;
+
+                          const valorTotal = assetsSetor.reduce((sum, a) => sum + a.valor_total, 0);
+
+                          return projecaoAnual > 0 ? (
+                            <div key={setor} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
+                              <div className="flex items-center gap-2 mb-3">
+                                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                                <h4 className="font-semibold text-foreground">{setor}</h4>
+                              </div>
+                              <div className="space-y-2">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Anual</p>
+                                  <p className="text-lg font-bold text-success">
+                                    R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Mensal</p>
+                                  <p className="text-sm font-semibold text-primary">
+                                    R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null;
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </AccordionContent>
+            </AccordionItem>
+          )}
 
-                {/* Previsão de Dividendos por Tipo */}
-                <div className="border-t border-border pt-6 mt-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-success" />
-                    Previsão de Dividendos
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Array.from(new Set(calculatedAssets.map(a => a.tipo_ativo || 'Outro'))).sort().map(tipo => {
-                      const assetsTipo = calculatedAssets.filter(a => (a.tipo_ativo || 'Outro') === tipo);
-                      const projecaoAnual = assetsTipo.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
-                      const projecaoMensal = projecaoAnual / 12;
-
-                      return (
-                        <div key={tipo} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
-                          <div className="flex items-center gap-2 mb-3">
-                            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                            <h4 className="font-semibold text-foreground">{tipo}</h4>
-                          </div>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">Anual</p>
-                              <p className="text-lg font-bold text-success">
-                                R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Mensal</p>
-                              <p className="text-sm font-semibold text-primary">
-                                R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+          {/* 3. Meus Ativos */}
+          {calculatedAssets.length > 0 && (
+            <AccordionItem value="my-assets" className="border-none bg-transparent px-0">
+              <AccordionTrigger className="hover:no-underline py-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-1 bg-green-500/10 rounded-lg">
+                    <List className="h-5 w-5 text-green-500" />
                   </div>
+                  <h2 className="text-2xl font-bold text-foreground">Meus Ativos</h2>
                 </div>
-              </TabsContent>
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-6">
+                <div className="flex flex-col gap-4 mb-4">
 
-              <TabsContent value="setor">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                  {Array.from(new Set(calculatedAssets.map(a => a.setor || 'Outros'))).sort().map(setor => {
-                    const assetsSetor = calculatedAssets.filter(a => (a.setor || 'Outros') === setor);
-                    const valorTotal = assetsSetor.reduce((sum, a) => sum + a.valor_total, 0);
-                    const dyPonderado = assetsSetor.reduce((sum, a) => {
-                      const participacao = a.valor_total / valorTotal;
-                      return sum + a.dividend_yield * participacao;
-                    }, 0);
-                    const crescimentoMedio = assetsSetor.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsSetor.length;
-                    const plTotal = assetsSetor.reduce((sum, a) => sum + a.pl_posicao, 0);
-
-                    return (
-                      <div key={setor} className="bg-gradient-to-br from-card to-card/50 p-5 rounded-lg border border-border hover:border-primary/50 transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2 mb-4">
-                          <TrendingUp className="h-5 w-5 text-primary" />
-                          <h4 className="font-bold text-lg text-foreground">{setor}</h4>
-                        </div>
-                        <div className="space-y-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground">Valor Total</p>
-                            <p className="text-xl font-bold text-foreground">
-                              R$ {valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">DY Médio</p>
-                              <p className="text-sm font-semibold text-success">
-                                {dyPonderado.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Crescim.</p>
-                              <p className={`text-sm font-semibold ${crescimentoMedio >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                {crescimentoMedio >= 0 ? '+' : ''}{crescimentoMedio.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">P/L</p>
-                              <p className={`text-sm font-semibold ${plTotal >= 0 ? 'text-success' : 'text-destructive'}`}>
-                                R$ {plTotal >= 0 ? '+' : ''}{Math.abs(plTotal).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Previsão de Dividendos por Setor */}
-                <div className="border-t border-border pt-6 mt-6">
-                  <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-success" />
-                    Previsão de Dividendos
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Array.from(new Set(calculatedAssets.map(a => a.setor || 'Outros'))).sort().map(setor => {
-                      const assetsSetor = calculatedAssets.filter(a => (a.setor || 'Outros') === setor);
-                      const projecaoAnual = assetsSetor.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
-                      const projecaoMensal = projecaoAnual / 12;
-
-                      return (
-                        <div key={setor} className="bg-card p-4 rounded-lg border border-border hover:border-primary/50 transition-colors">
-                          <div className="flex items-center gap-2 mb-3">
-                            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                            <h4 className="font-semibold text-foreground">{setor}</h4>
-                          </div>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="text-xs text-muted-foreground">Anual</p>
-                              <p className="text-lg font-bold text-success">
-                                R$ {projecaoAnual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground">Mensal</p>
-                              <p className="text-sm font-semibold text-primary">
-                                R$ {projecaoMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
-
-        {/* Cards dos Ativos Calculados */}
-        {calculatedAssets.length > 0 && (
-          <div>
-            <div className="flex flex-col gap-4 mb-4">
-              <h2 className="text-2xl font-bold text-foreground">Meus Ativos</h2>
-
-              {/* Barra de filtros/ordenação + busca */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full items-end">
-                {/* Busca */}
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground flex items-center gap-1"><Search className="h-4 w-4" /> Busca</div>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      placeholder="Buscar por ticker ou nome do ativo..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="h-10"
-                    />
-                    {searchQuery && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setSearchQuery("")}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 h-7 px-2 text-muted-foreground hover:text-foreground"
-                        tabIndex={-1}
-                      >
-                        Limpar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Filtrar Corretora */}
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Building2 className="h-4 w-4" /> Corretora
-                  </div>
-                  <Select value={brokerFilter} onValueChange={(v) => setBrokerFilter(v as any)}>
-                    <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Todas">Todas</SelectItem>
-                      {BROKER_LIST.map(b => (
-                        <SelectItem key={b} value={b}>{b}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Ordenar por */}
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Filter className="h-4 w-4" /> Ordenar por
-                  </div>
-                  <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="valor_total">Maior valor</SelectItem>
-                      <SelectItem value="dividend_yield">Maior DY</SelectItem>
-                      <SelectItem value="quantidade">Maior quantidade</SelectItem>
-                      <SelectItem value="preco_atual">Maior preço atual</SelectItem>
-                      <SelectItem value="variacao_percentual">Maior variação %</SelectItem>
-                      <SelectItem value="pl_posicao">Maior P/L posição</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Direção */}
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground flex items-center gap-1">
-                    <ArrowDownWideNarrow className="h-4 w-4" /> Direção
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant={sortDir === "desc" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSortDir("desc")}
-                      title="Maior para menor"
-                      className="flex-1"
-                    >
-                      <ArrowDownWideNarrow className="h-4 w-4 mr-1" /> Desc
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={sortDir === "asc" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSortDir("asc")}
-                      title="Menor para maior"
-                      className="flex-1"
-                    >
-                      <ArrowUpWideNarrow className="h-4 w-4 mr-1" /> Asc
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {displayedAssets
-                .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                .map((asset) => (
-                  <AssetCard
-                    key={asset.id}
-                    asset={asset}
-                    onRemove={handleRemoveAsset}
-                    onEdit={handleEditAsset}
-                  />
-                ))
-              }
-            </div>
-
-
-          </div>
-        )}
-
-        {/* Paginação e Botão PDF */}
-        {(displayedAssets.length > itemsPerPage || (calculatedAssets.length > 0 && summary)) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 items-center mt-8 gap-4 mb-6">
-
-            {/* Coluna Esquerda (Vazia para balanceamento) */}
-            <div className="hidden md:block"></div>
-
-            {/* Coluna Central (Paginação) */}
-            <div className="flex justify-center">
-              {displayedAssets.length > itemsPerPage && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    Anterior
-                  </Button>
-
-                  <div className="flex gap-1">
-                    {Array.from({ length: Math.ceil(displayedAssets.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
-                      <Button
-                        key={page}
-                        variant={currentPage === page ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setCurrentPage(page)}
-                        className="min-w-[40px]"
-                      >
-                        {page}
-                      </Button>
-                    ))}
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedAssets.length / itemsPerPage), p + 1))}
-                    disabled={currentPage === Math.ceil(displayedAssets.length / itemsPerPage)}
-                  >
-                    Próxima
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Coluna Direita (Botão PDF) */}
-            <div className="flex justify-center md:justify-end">
-              {calculatedAssets.length > 0 && summary && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={async () => {
-                    const jsPDF = (window as any).jspdf?.jsPDF;
-                    if (!jsPDF) {
-                      alert("Biblioteca de PDF não carregada. Verifique sua conexão de internet.");
-                      return;
-                    }
-                    const doc = new jsPDF();
-                    doc.setFontSize(18);
-                    doc.text("Resumo da Carteira", 14, 18);
-                    doc.setFontSize(12);
-                    doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 28);
-                    doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 36);
-                    doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 44);
-                    doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 52);
-                    (doc as any).autoTable({
-                      startY: 60,
-                      head: [[
-                        "Ativo",
-                        "Tipo",
-                        "Índice",
-                        "Taxa",
-                        "Corretora",
-                        "Valor Atual",
-                        "Valor Aplicado",
-                        "Rentabilidade %",
-                        "P/L Posição"
-                      ]],
-                      body: calculatedAssets.map(a => {
-                        const indice = a.indice_referencia || '';
-                        const taxa = (typeof a.taxa_contratada === 'number' && a.taxa_contratada > 0)
-                          ? `${a.taxa_contratada.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
-                          : '';
-                        return [
-                          a.ticker_normalizado.replace('.SA', ''),
-                          a.tipo_ativo_manual || a.tipo_ativo || '',
-                          indice,
-                          taxa,
-                          a.corretora,
-                          `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-                          (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-                          `${a.variacao_percentual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}%`,
-                          `R$ ${a.pl_posicao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}`
-                        ];
-                      }),
-                      styles: { fontSize: 10 },
-                      headStyles: { fillColor: [44, 62, 80] },
-                      margin: { left: 14, right: 14 },
-                      theme: 'grid',
-                    });
-                    doc.save("carteira_dashboard_b3.pdf");
-                  }}
-                >
-                  <Download className="h-4 w-4" />
-                  Baixar PDF da Carteira
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Lembretes - Vencimentos de Títulos e Dívidas */}
-        {allReminders.length > 0 && (
-          <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-2 bg-amber-500/10 rounded-lg">
-                <Bell className="h-6 w-6 text-amber-500" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
-                  Lembretes
-                  {allReminders.filter(a => a.daysUntil <= 30).length > 0 && (
-                    <span className="px-2 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-semibold rounded-full">
-                      {allReminders.filter(a => a.daysUntil <= 30 && a.daysUntil >= 0).length} próximo(s)
-                    </span>
-                  )}
-                </h2>
-                <p className="text-sm text-muted-foreground">Vencimentos de títulos e contas a pagar</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {allReminders.map((item) => {
-                const isExpiringSoon = item.daysUntil <= 30 && item.daysUntil >= 0;
-                const isExpired = item.daysUntil < 0;
-                const isDebt = item.type === 'debt';
-
-                return (
-                  <div
-                    key={`${item.type}-${item.id}`}
-                    className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-lg border transition-all hover:shadow-md ${isExpired
-                      ? 'bg-red-500/5 border-red-500/20 hover:border-red-500/40'
-                      : isExpiringSoon
-                        ? 'bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40'
-                        : 'bg-card border-border hover:border-primary/30'
-                      }`}
-                  >
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className={`p-2.5 rounded-lg shrink-0 ${isExpired
-                        ? 'bg-red-500/10'
-                        : isExpiringSoon
-                          ? 'bg-amber-500/10'
-                          : isDebt ? 'bg-blue-500/10' : 'bg-primary/10'
-                        }`}>
-                        {isDebt ? (
-                          <Bell className={`h-5 w-5 ${isExpired ? 'text-red-500' : isExpiringSoon ? 'text-amber-500' : 'text-blue-500'
-                            }`} />
-                        ) : (
-                          <Calendar className={`h-5 w-5 ${isExpired
-                            ? 'text-red-500'
-                            : isExpiringSoon
-                              ? 'text-amber-500'
-                              : 'text-primary'
-                            }`} />
+                  {/* Barra de filtros/ordenação + busca */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full items-end">
+                    {/* Busca */}
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground flex items-center gap-1"><Search className="h-4 w-4" /> Busca</div>
+                      <div className="relative">
+                        <Input
+                          type="text"
+                          placeholder="Buscar por ticker ou nome do ativo..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="h-10"
+                        />
+                        {searchQuery && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSearchQuery("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 h-7 px-2 text-muted-foreground hover:text-foreground"
+                            tabIndex={-1}
+                          >
+                            Limpar
+                          </Button>
                         )}
                       </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-bold text-foreground text-lg">
-                            {item.title}
-                          </h3>
-                          {isExpiringSoon && (
-                            <span className="px-2 py-0.5 bg-amber-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
-                              <AlertCircle className="h-3 w-3" />
-                              Vence em breve
-                            </span>
-                          )}
-                          {isExpired && (
-                            <span className="px-2 py-0.5 bg-red-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
-                              <AlertCircle className="h-3 w-3" />
-                              Vencido
-                            </span>
-                          )}
-                          {isDebt && (
-                            <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
-                              Dívida
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {item.subtitle} • {item.value ? item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ -'}
-                        </p>
-                      </div>
                     </div>
 
-                    <div className="flex items-center gap-6 md:gap-8 w-full md:w-auto justify-between md:justify-end">
-                      <div className="text-left md:text-right">
-                        <p className="text-xs text-muted-foreground mb-1">Vencimento</p>
-                        <p className="text-base md:text-lg font-bold text-foreground whitespace-nowrap">
-                          {item.date.toLocaleDateString('pt-BR')}
-                        </p>
+                    {/* Filtrar Corretora */}
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Building2 className="h-4 w-4" /> Corretora
                       </div>
+                      <Select value={brokerFilter} onValueChange={(v) => setBrokerFilter(v as any)}>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Todas">Todas</SelectItem>
+                          {BROKER_LIST.map(b => (
+                            <SelectItem key={b} value={b}>{b}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                      <div className="text-left md:text-right min-w-[100px]">
-                        <p className="text-xs text-muted-foreground mb-1">Faltam</p>
-                        <p className={`text-base md:text-lg font-bold whitespace-nowrap ${isExpired
-                          ? 'text-red-600 dark:text-red-400'
-                          : isExpiringSoon
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-foreground'
-                          }`}>
-                          {isExpired
-                            ? `${Math.abs(item.daysUntil)} dias atrás`
-                            : item.daysUntil === 0
-                              ? 'Vence hoje!'
-                              : item.daysUntil === 1
-                                ? '1 dia'
-                                : `${item.daysUntil} dias`
-                          }
-                        </p>
+                    {/* Ordenar por */}
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Filter className="h-4 w-4" /> Ordenar por
                       </div>
+                      <Select value={sortKey} onValueChange={(v) => setSortKey(v as any)}>
+                        <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="valor_total">Maior valor</SelectItem>
+                          <SelectItem value="dividend_yield">Maior DY</SelectItem>
+                          <SelectItem value="quantidade">Maior quantidade</SelectItem>
+                          <SelectItem value="preco_atual">Maior preço atual</SelectItem>
+                          <SelectItem value="variacao_percentual">Maior variação %</SelectItem>
+                          <SelectItem value="pl_posicao">Maior P/L posição</SelectItem>
+                          <SelectItem value="ticker_normalizado">Ordem Alfabética</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
 
-                      {isDebt && (
+                    {/* Direção */}
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                        <ArrowDownWideNarrow className="h-4 w-4" /> Direção
+                      </div>
+                      <div className="flex gap-2">
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() => {
-                            if (confirm("Remover este lembrete?")) removeDebtReminder(item.id);
-                          }}
-                          title="Remover lembrete"
+                          type="button"
+                          variant={sortDir === "desc" ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSortDir("desc")}
+                          title="Maior para menor"
+                          className="flex-1"
                         >
-                          <Trash2 className="h-5 w-5" />
+                          <ArrowDownWideNarrow className="h-4 w-4 mr-1" /> Desc
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={sortDir === "asc" ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSortDir("asc")}
+                          title="Menor para maior"
+                          className="flex-1"
+                        >
+                          <ArrowUpWideNarrow className="h-4 w-4 mr-1" /> Asc
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {displayedAssets
+                      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                      .map((asset) => (
+                        <AssetCard
+                          key={asset.id}
+                          asset={asset}
+                          onRemove={handleRemoveAsset}
+                          onEdit={handleEditAsset}
+                        />
+                      ))
+                    }
+                  </div>
+
+
+                </div>
+
+
+                {/* Paginação e Botão PDF */}
+                {(displayedAssets.length > itemsPerPage || (calculatedAssets.length > 0 && summary)) && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 items-center mt-8 gap-4 mb-6">
+
+                    {/* Coluna Esquerda (Vazia para balanceamento) */}
+                    <div className="hidden md:block"></div>
+
+                    {/* Coluna Central (Paginação) */}
+                    <div className="flex justify-center">
+                      {displayedAssets.length > itemsPerPage && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                          >
+                            Anterior
+                          </Button>
+
+                          <div className="flex gap-1">
+                            {Array.from({ length: Math.ceil(displayedAssets.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+                              <Button
+                                key={page}
+                                variant={currentPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setCurrentPage(page)}
+                                className="min-w-[40px]"
+                              >
+                                {page}
+                              </Button>
+                            ))}
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(p => Math.min(Math.ceil(displayedAssets.length / itemsPerPage), p + 1))}
+                            disabled={currentPage === Math.ceil(displayedAssets.length / itemsPerPage)}
+                          >
+                            Próxima
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Coluna Direita (Botão PDF) */}
+                    <div className="flex justify-center md:justify-end">
+                      {calculatedAssets.length > 0 && summary && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={async () => {
+                            const jsPDF = (window as any).jspdf?.jsPDF;
+                            if (!jsPDF) {
+                              alert("Biblioteca de PDF não carregada. Verifique sua conexão de internet.");
+                              return;
+                            }
+                            const doc = new jsPDF();
+                            doc.setFontSize(18);
+                            doc.text("Resumo da Carteira", 14, 18);
+                            doc.setFontSize(12);
+                            doc.text(`Valor Total: R$ ${summary.valor_total_carteira.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 28);
+                            doc.text(`DY Médio Ponderado: ${summary.dy_ponderado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 36);
+                            doc.text(`Crescimento Médio: ${(calculatedAssets.reduce((sum, a) => sum + a.variacao_percentual, 0) / calculatedAssets.length).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}%`, 14, 44);
+                            doc.text(`P/L Total: R$ ${summary.pl_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 52);
+                            (doc as any).autoTable({
+                              startY: 60,
+                              head: [[
+                                "Ativo",
+                                "Tipo",
+                                "Índice",
+                                "Taxa",
+                                "Corretora",
+                                "Valor Atual",
+                                "Valor Aplicado",
+                                "Rentabilidade %",
+                                "P/L Posição"
+                              ]],
+                              body: calculatedAssets.map(a => {
+                                const indice = a.indice_referencia || '';
+                                const taxa = (typeof a.taxa_contratada === 'number' && a.taxa_contratada > 0)
+                                  ? `${a.taxa_contratada.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
+                                  : '';
+                                return [
+                                  a.ticker_normalizado.replace('.SA', ''),
+                                  a.tipo_ativo_manual || a.tipo_ativo || '',
+                                  indice,
+                                  taxa,
+                                  a.corretora,
+                                  `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                                  (a.preco_medio && a.quantidade) ? `R$ ${(a.preco_medio * a.quantidade).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : `R$ ${a.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                                  `${a.variacao_percentual?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}%`,
+                                  `R$ ${a.pl_posicao?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) ?? '-'}`
+                                ];
+                              }),
+                              styles: { fontSize: 10 },
+                              headStyles: { fillColor: [44, 62, 80] },
+                              margin: { left: 14, right: 14 },
+                              theme: 'grid',
+                            });
+                            doc.save("carteira_dashboard_b3.pdf");
+                          }}
+                        >
+                          <Download className="h-4 w-4" />
+                          Baixar PDF da Carteira
                         </Button>
                       )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          )}
 
-        {/* Previsão de Retornos + Minhas Dívidas */}
-        <div>
-          <DebtsSection data={debtsState} onChange={handleDebtsChange} />
-          <ReturnsForecastSection
-            financingParcela={debtTotals.financingParcela}
-            cardMonthTotal={debtTotals.cardMonthTotal}
-            othersTotal={debtTotals.othersTotal}
-            month={forecastMonth}
-            onMonthChange={(m) => {
-              setForecastMonth(m);
-              recomputeDebtTotals(debtsState, m);
-            }}
-          />
-        </div>
+          {/* 4. Lembretes */}
+          {
+            allReminders.length > 0 && (
+              <AccordionItem value="reminders" className="border-none bg-transparent px-0">
+                <AccordionTrigger className="hover:no-underline py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-1 bg-amber-500/10 rounded-lg">
+                      <Bell className="h-5 w-5 text-amber-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                      Lembretes
+                      {allReminders.filter(a => a.daysUntil <= 30).length > 0 && (
+                        <span className="px-2 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-semibold rounded-full">
+                          {allReminders.filter(a => a.daysUntil <= 30 && a.daysUntil >= 0).length} próximo(s)
+                        </span>
+                      )}
+                    </h2>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-2 pb-6">
+                  <p className="text-sm text-muted-foreground mb-4">Vencimentos de títulos e contas a pagar</p>
 
-        {/* Gráficos */}
-        {calculatedAssets.length > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold text-foreground mb-4">Análise Gráfica</h2>
-            <Charts assets={calculatedAssets} />
-          </div>
-        )}
+                  <div className="space-y-3">
+                    {allReminders.map((item) => {
+                      const isExpiringSoon = item.daysUntil <= 30 && item.daysUntil >= 0;
+                      const isExpired = item.daysUntil < 0;
+                      const isDebt = item.type === 'debt';
+
+                      return (
+                        <div
+                          key={`${item.type}-${item.id}`}
+                          className={`flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-lg border transition-all hover:shadow-md ${isExpired
+                            ? 'bg-red-500/5 border-red-500/20 hover:border-red-500/40'
+                            : isExpiringSoon
+                              ? 'bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40'
+                              : 'bg-card border-border hover:border-primary/30'
+                            }`}
+                        >
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className={`p-2.5 rounded-lg shrink-0 ${isExpired
+                              ? 'bg-red-500/10'
+                              : isExpiringSoon
+                                ? 'bg-amber-500/10'
+                                : isDebt ? 'bg-blue-500/10' : 'bg-primary/10'
+                              }`}>
+                              {isDebt ? (
+                                <Bell className={`h-5 w-5 ${isExpired ? 'text-red-500' : isExpiringSoon ? 'text-amber-500' : 'text-blue-500'
+                                  }`} />
+                              ) : (
+                                <Calendar className={`h-5 w-5 ${isExpired
+                                  ? 'text-red-500'
+                                  : isExpiringSoon
+                                    ? 'text-amber-500'
+                                    : 'text-primary'
+                                  }`} />
+                              )}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-bold text-foreground text-lg">
+                                  {item.title}
+                                </h3>
+                                {isExpiringSoon && (
+                                  <span className="px-2 py-0.5 bg-amber-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Vence em breve
+                                  </span>
+                                )}
+                                {isExpired && (
+                                  <span className="px-2 py-0.5 bg-red-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Vencido
+                                  </span>
+                                )}
+                                {isDebt && (
+                                  <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 whitespace-nowrap">
+                                    Dívida
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {item.subtitle} • {item.value ? item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ -'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-6 md:gap-8 w-full md:w-auto justify-between md:justify-end">
+                            <div className="text-left md:text-right">
+                              <p className="text-xs text-muted-foreground mb-1">Vencimento</p>
+                              <p className="text-base md:text-lg font-bold text-foreground whitespace-nowrap">
+                                {item.date.toLocaleDateString('pt-BR')}
+                              </p>
+                            </div>
+
+                            <div className="text-left md:text-right min-w-[100px]">
+                              <p className="text-xs text-muted-foreground mb-1">Faltam</p>
+                              <p className={`text-base md:text-lg font-bold whitespace-nowrap ${isExpired
+                                ? 'text-red-600 dark:text-red-400'
+                                : isExpiringSoon
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-foreground'
+                                }`}>
+                                {isExpired
+                                  ? `${Math.abs(item.daysUntil)} dias atrás`
+                                  : item.daysUntil === 0
+                                    ? 'Vence hoje!'
+                                    : item.daysUntil === 1
+                                      ? '1 dia'
+                                      : `${item.daysUntil} dias`
+                                }
+                              </p>
+                            </div>
+
+                            {isDebt && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground hover:text-destructive"
+                                onClick={() => {
+                                  if (confirm("Remover este lembrete?")) removeDebtReminder(item.id);
+                                }}
+                                title="Remover lembrete"
+                              >
+                                <Trash2 className="h-5 w-5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )
+          }
+
+          {/* 5. Minhas Dívidas */}
+          <AccordionItem value="debts" className="border-none bg-transparent px-0">
+            <AccordionTrigger className="hover:no-underline py-4">
+              <div className="flex items-center gap-3">
+                <div className="p-1 bg-red-500/10 rounded-lg">
+                  <CreditCard className="h-5 w-5 text-red-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">Minhas Dívidas</h2>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2 pb-6">
+              <DebtsSection data={debtsState} onChange={handleDebtsChange} />
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* 6. Previsão de Retornos */}
+          <AccordionItem value="returns" className="border-none bg-transparent px-0">
+            <AccordionTrigger className="hover:no-underline py-4">
+              <div className="flex items-center gap-3">
+                <div className="p-1 bg-purple-500/10 rounded-lg">
+                  <TrendingUp className="h-5 w-5 text-purple-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">Previsão de Retornos</h2>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2 pb-6">
+              <ReturnsForecastSection
+                financingParcela={debtTotals.financingParcela}
+                cardMonthTotal={debtTotals.cardMonthTotal}
+                othersTotal={debtTotals.othersTotal}
+                month={forecastMonth}
+                onMonthChange={(m) => {
+                  setForecastMonth(m);
+                  recomputeDebtTotals(debtsState, m);
+                }}
+              />
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* 7. Análise Gráfica */}
+          {calculatedAssets.length > 0 && (
+            <AccordionItem value="charts" className="border-none bg-transparent px-0">
+              <AccordionTrigger className="hover:no-underline py-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-1 bg-orange-500/10 rounded-lg">
+                    <BarChart3 className="h-5 w-5 text-orange-500" />
+                  </div>
+                  <h2 className="text-2xl font-bold text-foreground">Análise Gráfica</h2>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-2 pb-6">
+                <Charts assets={calculatedAssets} />
+              </AccordionContent>
+            </AccordionItem>
+          )}
+
+        </Accordion>
       </div>
     </div>
   );

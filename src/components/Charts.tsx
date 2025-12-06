@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useState } from "react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface ChartsProps {
   assets: CalculatedAsset[];
@@ -46,6 +48,10 @@ const gradientFills = [
 
 export function Charts({ assets }: ChartsProps) {
   const [selectedBroker, setSelectedBroker] = useState<string>("Todas");
+  const [dyFilterType, setDyFilterType] = useState<string>("Todos");
+  const [dyHideZeros, setDyHideZeros] = useState<boolean>(true);
+  const [dyLimit, setDyLimit] = useState<string>("20");
+
   const LABEL_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\"";
 
   // ... (logic remains the same)
@@ -92,10 +98,11 @@ export function Charts({ assets }: ChartsProps) {
   }));
 
   // Dados para gráfico de barras DY - agrupa por ticker (soma se tiver em várias corretoras)
-  const dyMap = new Map<string, { ticker: string; dy: number; valor_total: number }>();
+  const dyMap = new Map<string, { ticker: string; dy: number; valor_total: number; tipo: string }>();
 
   assets.forEach((asset) => {
     const ticker = asset.ticker_normalizado.replace(".SA", "");
+    const tipo = asset.tipo_ativo || inferTipoAtivo(asset.ticker_normalizado, asset.setor);
     const existing = dyMap.get(ticker);
 
     if (existing) {
@@ -106,23 +113,39 @@ export function Charts({ assets }: ChartsProps) {
         ticker,
         dy: dyPonderado,
         valor_total: totalValor,
+        tipo: existing.tipo // Mantém o tipo original
       });
     } else {
       dyMap.set(ticker, {
         ticker,
         dy: asset.dividend_yield,
         valor_total: asset.valor_total,
+        tipo
       });
     }
   });
 
-  const dyData = Array.from(dyMap.values())
+  let dyData = Array.from(dyMap.values())
     .map((data, i) => ({
       ticker: data.ticker,
       dy: data.dy,
+      tipo: data.tipo,
       color: TICKER_PALETTE[i % TICKER_PALETTE.length],
     }))
     .sort((a, b) => b.dy - a.dy);
+
+  // Filtros DY
+  if (dyFilterType !== "Todos") {
+    dyData = dyData.filter(d => d.tipo === dyFilterType);
+  }
+
+  if (dyHideZeros) {
+    dyData = dyData.filter(d => d.dy > 0);
+  }
+
+  if (dyLimit !== "Todos") {
+    dyData = dyData.slice(0, parseInt(dyLimit));
+  }
 
   // Helpers para legendas
   const buildLegend = (data: { name: string; value: number; color: string }[]) => {
@@ -157,6 +180,11 @@ export function Charts({ assets }: ChartsProps) {
     'Ação': '#3B82F6',
     'FII': '#10B981',
     'ETF': '#F59E0B',
+    'Previdência': '#8B5CF6',
+    'Tesouro Direto': '#06B6D4',
+    'LCI/LCA': '#EC4899',
+    'CDB': '#EAB308',
+    'Renda Fixa': '#14B8A6',
     'Outro': '#7E8895',
   };
 
@@ -252,7 +280,7 @@ export function Charts({ assets }: ChartsProps) {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => `R$ ${value.toFixed(2)}`}
+                  formatter={(value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   contentStyle={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12, fontFamily: LABEL_FONT as any }}
                   itemStyle={{ color: "hsl(var(--foreground))" }}
                   labelStyle={{ color: "hsl(var(--muted-foreground))" }}
@@ -301,7 +329,7 @@ export function Charts({ assets }: ChartsProps) {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => `R$ ${value.toFixed(2)}`}
+                  formatter={(value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   contentStyle={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12, fontFamily: LABEL_FONT as any }}
                   itemStyle={{ color: "hsl(var(--foreground))" }}
                   labelStyle={{ color: "hsl(var(--muted-foreground))" }}
@@ -327,7 +355,44 @@ export function Charts({ assets }: ChartsProps) {
 
       {/* Dividend Yield por Ticker */}
       <div className="bg-card p-6 rounded-xl border border-border lg:col-span-2">
-        <h3 className="text-lg font-bold text-foreground mb-4">Dividend Yield TTM por Ticker</h3>
+        <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
+          <h3 className="text-lg font-bold text-foreground">Dividend Yield TTM por Ticker</h3>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="dy-hide-zeros" className="text-sm cursor-pointer">Ocultar Zeros</Label>
+              <Checkbox
+                id="dy-hide-zeros"
+                checked={dyHideZeros}
+                onCheckedChange={(c) => setDyHideZeros(c === true)}
+              />
+            </div>
+
+            <Select value={dyFilterType} onValueChange={setDyFilterType}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Todos Tipos</SelectItem>
+                <SelectItem value="Ação">Ações</SelectItem>
+                <SelectItem value="FII">FIIs</SelectItem>
+                <SelectItem value="ETF">ETFs</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={dyLimit} onValueChange={setDyLimit}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="Exibir" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">Top 10</SelectItem>
+                <SelectItem value="20">Top 20</SelectItem>
+                <SelectItem value="30">Top 30</SelectItem>
+                <SelectItem value="Todos">Todos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={340}>
           <BarChart data={dyData}>
             <CartesianGrid strokeDasharray="2 4" stroke="hsl(var(--border))" />
@@ -396,7 +461,7 @@ export function Charts({ assets }: ChartsProps) {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => `R$ ${value.toFixed(2)}`}
+                  formatter={(value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   contentStyle={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12, fontFamily: LABEL_FONT as any }}
                   itemStyle={{ color: "hsl(var(--foreground))" }}
                   labelStyle={{ color: "hsl(var(--muted-foreground))" }}
@@ -445,7 +510,7 @@ export function Charts({ assets }: ChartsProps) {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(value: number) => `R$ ${value.toFixed(2)}`}
+                  formatter={(value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                   contentStyle={{ backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))", border: "1px solid hsl(var(--border))", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.25)", fontSize: 12, fontFamily: LABEL_FONT as any }}
                   itemStyle={{ color: "hsl(var(--foreground))" }}
                   labelStyle={{ color: "hsl(var(--muted-foreground))" }}

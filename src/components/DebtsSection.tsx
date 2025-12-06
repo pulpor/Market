@@ -277,11 +277,39 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
       action: (
         <ToastAction altText="Excluir" onClick={async () => {
           await save({ ...state, others: state.others.filter(o => o.id !== id) });
+          if (editingNoteId === id) {
+            cancelEditOther();
+          }
         }}>
           Excluir
         </ToastAction>
       ),
     });
+  };
+
+  const updateOther = async (id: string, d: Partial<OtherDebt>) => {
+    const copy = [...state.others];
+    const idx = copy.findIndex(o => o.id === id);
+    if (idx >= 0) {
+      copy[idx] = { ...copy[idx], ...d };
+      await save({ ...state, others: copy });
+    }
+  };
+
+  const handleEditOther = (note: OtherDebt) => {
+    setEditingNoteId(note.id);
+    setOtherDesc(note.descricao);
+    setOtherValue(note.valor.toString());
+    setOtherDue(note.vencimento || "");
+    setOtherHasDue(!!note.tem_vencimento);
+  };
+
+  const cancelEditOther = () => {
+    setEditingNoteId(null);
+    setOtherDesc("");
+    setOtherValue("");
+    setOtherDue("");
+    setOtherHasDue(false);
   };
 
   // Local form states
@@ -312,6 +340,7 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
   const [otherValue, setOtherValue] = useState<string>("");
   const [otherDue, setOtherDue] = useState<string>("");
   const [otherHasDue, setOtherHasDue] = useState<boolean>(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
 
   // Expand state for financings
   const [expandedFinancing, setExpandedFinancing] = useState<number | null>(0);
@@ -659,12 +688,33 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
               <Label htmlFor="otherDue">Vencimento</Label>
               <Input id="otherDue" type="date" value={otherDue} onChange={(e) => setOtherDue(e.target.value)} disabled={!otherHasDue} />
             </div>
-            <Button onClick={() => {
-              const val = parseFloat(otherValue || '0');
-              if (!otherDesc || !val || val <= 0) return;
-              addOther({ id: Date.now().toString(), descricao: otherDesc, valor: val, vencimento: otherHasDue ? otherDue || undefined : undefined, tem_vencimento: otherHasDue });
-              setOtherDesc(""); setOtherValue(""); setOtherDue(""); setOtherHasDue(false);
-            }} className="h-10 md:col-span-4"><Plus className="h-4 w-4 mr-2" />Adicionar</Button>
+            <div className="flex gap-2 md:col-span-4">
+              <Button onClick={() => {
+                const val = parseFloat(otherValue || '0');
+                if (!otherDesc || !val || val <= 0) return;
+
+                if (editingNoteId) {
+                  updateOther(editingNoteId, {
+                    descricao: otherDesc,
+                    valor: val,
+                    vencimento: otherHasDue ? otherDue || undefined : undefined,
+                    tem_vencimento: otherHasDue
+                  });
+                  cancelEditOther();
+                  toast({ title: "Anotação atualizada", description: "As alterações foram salvas com sucesso." });
+                } else {
+                  addOther({ id: Date.now().toString(), descricao: otherDesc, valor: val, vencimento: otherHasDue ? otherDue || undefined : undefined, tem_vencimento: otherHasDue });
+                  setOtherDesc(""); setOtherValue(""); setOtherDue(""); setOtherHasDue(false);
+                }
+              }} className="h-10 flex-1">
+                {editingNoteId ? <><Pencil className="h-4 w-4 mr-2" /> Salvar Alterações</> : <><Plus className="h-4 w-4 mr-2" /> Adicionar</>}
+              </Button>
+              {editingNoteId && (
+                <Button variant="outline" onClick={cancelEditOther} className="h-10">
+                  Cancelar
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -682,7 +732,14 @@ export function DebtsSection({ data, onChange }: DebtsSectionProps) {
                       <p className="text-sm font-medium">{d.descricao}</p>
                       <p className="text-xs text-muted-foreground">{formatCurrencyBR(d.valor)}</p>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => removeOther(d.id)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditOther(d)} title="Editar">
+                        <Pencil className="h-4 w-4 text-muted-foreground hover:text-primary" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => removeOther(d.id)} title="Excluir">
+                        <Trash2 className="h-4 w-4 text-destructive/70 hover:text-destructive" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
