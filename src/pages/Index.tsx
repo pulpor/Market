@@ -4,6 +4,7 @@ import { AssetForm } from "@/components/AssetForm";
 import { MarketBar } from "@/components/MarketBar";
 import { AssetCard } from "@/components/AssetCard";
 import { Charts } from "@/components/Charts";
+import { PortfolioIndexComparison } from "@/components/PortfolioIndexComparison";
 import { DebtsSection } from "@/components/DebtsSection";
 import { ReturnsForecastSection } from "@/components/ReturnsForecastSection";
 import { loadDebts, saveDebts } from "@/services/debtStorage";
@@ -1475,8 +1476,11 @@ const Index = () => {
                   <h2 className="text-2xl font-bold text-foreground">Análise Gráfica</h2>
                 </div>
               </AccordionTrigger>
-              <AccordionContent className="pt-2 pb-6">
+              <AccordionContent className="pt-2 pb-6 space-y-6">
                 <Charts assets={calculatedAssets} />
+                <div className="border-t pt-6">
+                  <PortfolioIndexComparison assets={calculatedAssets} summary={summary} />
+                </div>
               </AccordionContent>
             </AccordionItem>
           )}

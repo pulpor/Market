@@ -6,7 +6,7 @@ import { Asset } from "@/types/asset";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Calculator, Coins, Wallet, Briefcase, TrendingUp, TrendingDown, DollarSign, Receipt } from "lucide-react";
+import { Plus, Trash2, Calculator, Coins, Wallet, Briefcase, TrendingUp, TrendingDown, DollarSign, Receipt, Edit2 } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Legend, Tooltip } from "recharts";
 import {
   Select,
@@ -48,6 +48,7 @@ export function ReturnsForecastSection(props: Props) {
 
   const [recDesc, setRecDesc] = useState<string>("");
   const [recAmount, setRecAmount] = useState<string>("");
+  const [editingRecId, setEditingRecId] = useState<string | null>(null);
 
   const [expDesc, setExpDesc] = useState<string>("");
   const [expAmount, setExpAmount] = useState<string>("");
@@ -111,12 +112,32 @@ export function ReturnsForecastSection(props: Props) {
 
   const addReceivable = async () => {
     const amt = parseFloat(recAmount || '0'); if (!recDesc || !amt) return;
-    const entry: ReceivableEntry = { id: Date.now().toString(), description: recDesc, amount: amt };
-    await save({ ...state, receivables: [...state.receivables, entry] });
+    if (editingRecId) {
+      // Editar existente
+      const updated = state.receivables.map(r => r.id === editingRecId ? { ...r, description: recDesc, amount: amt } : r);
+      await save({ ...state, receivables: updated });
+      setEditingRecId(null);
+    } else {
+      // Criar novo
+      const entry: ReceivableEntry = { id: Date.now().toString(), description: recDesc, amount: amt };
+      await save({ ...state, receivables: [...state.receivables, entry] });
+    }
     setRecDesc(''); setRecAmount('');
   };
 
   const removeReceivable = async (id: string) => { await save({ ...state, receivables: state.receivables.filter(r => r.id !== id) }); };
+  
+  const editReceivable = (rec: ReceivableEntry) => {
+    setRecDesc(rec.description);
+    setRecAmount(rec.amount.toString());
+    setEditingRecId(rec.id);
+  };
+  
+  const cancelEditReceivable = () => {
+    setRecDesc('');
+    setRecAmount('');
+    setEditingRecId(null);
+  };
 
   const addExpense = async () => {
     const amt = parseFloat(expAmount || '0'); if (!expDesc || !amt) return;
@@ -348,17 +369,29 @@ export function ReturnsForecastSection(props: Props) {
                     <Label className="text-xs">Valor (R$)</Label>
                     <Input type="number" step="0.01" value={recAmount} onChange={e => setRecAmount(e.target.value)} className="h-9" placeholder="0,00" />
                   </div>
-                  <Button onClick={addReceivable} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
+                  {editingRecId ? (
+                    <>
+                      <Button onClick={addReceivable} size="sm" className="h-9 bg-blue-600 hover:bg-blue-700">Salvar</Button>
+                      <Button onClick={cancelEditReceivable} size="sm" className="h-9" variant="outline">Cancelar</Button>
+                    </>
+                  ) : (
+                    <Button onClick={addReceivable} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
+                  )}
                 </div>
 
                 <ScrollArea className="h-60 pr-4">
                   <div className="space-y-1">
                     {state.receivables.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhum registro.</p>}
                     {state.receivables.slice().reverse().map(r => (
-                      <div key={r.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
+                      <div key={r.id} className={`flex items-center justify-between p-2 rounded text-sm ${
+                        editingRecId === r.id ? 'bg-blue-500/20 border border-blue-300' : 'bg-muted/20'
+                      }`}>
                         <span>{r.description}</span>
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-green-600">{formatBR(r.amount)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => editReceivable(r)}>
+                            <Edit2 className="h-3 w-3 text-muted-foreground hover:text-blue-600" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeReceivable(r.id)}>
                             <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                           </Button>
