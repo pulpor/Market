@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Asset, Corretora, CalculatedAsset } from "@/types/asset";
 import { BROKER_LIST } from "@/utils/brokerColors";
@@ -22,12 +23,13 @@ const indicesReferencia = ["CDI", "IPCA", "Pré-fixado", "Selic", "IGP-M", "Outr
 
 export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCancelEdit }: AssetFormProps) {
   const [modoAtivo, setModoAtivo] = useState<"variavel" | "fixa">("variavel");
-  
+
   // Campos Renda Variável
   const [ticker, setTicker] = useState("");
   const [quantidade, setQuantidade] = useState("");
   const [precoMedio, setPrecoMedio] = useState("");
   const [corretora, setCorretora] = useState<Corretora>("Nubank");
+  const [isInternational, setIsInternational] = useState(false);
 
   // Campos Renda Fixa
   const [nomeAtivo, setNomeAtivo] = useState("");
@@ -49,10 +51,10 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         setTipoRendaFixa(editingAsset.tipo_ativo_manual as typeof tiposRendaFixa[number]);
         setValorAplicado(editingAsset.preco_medio.toString());
         setValorAtual((editingAsset.valor_atual_rf || editingAsset.preco_medio).toString());
-  setIndiceReferencia((editingAsset.indice_referencia || "CDI") as typeof indicesReferencia[number]);
+        setIndiceReferencia((editingAsset.indice_referencia || "CDI") as typeof indicesReferencia[number]);
         setTaxaContratada(editingAsset.taxa_contratada?.toString() || "");
         setDataVencimento(editingAsset.data_vencimento || "");
-  setDataAplicacao((editingAsset as any).data_aplicacao || "");
+        setDataAplicacao((editingAsset as any).data_aplicacao || "");
         setCorretora(editingAsset.corretora);
       } else {
         // Renda Variável
@@ -61,6 +63,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         setQuantidade(editingAsset.quantidade.toString());
         setPrecoMedio(editingAsset.preco_medio.toString());
         setCorretora(editingAsset.corretora);
+        setIsInternational(editingAsset.is_international || false);
       }
     }
   }, [editingAsset]);
@@ -95,6 +98,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         quantidade: qtd,
         preco_medio: preco,
         corretora,
+        is_international: isInternational,
       };
 
       onAddAndCalculate(newAsset);
@@ -103,6 +107,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       setTicker("");
       setQuantidade("");
       setPrecoMedio("");
+      setIsInternational(false);
     } else {
       // Validação Renda Fixa
       if (!nomeAtivo || !valorAplicado) {
@@ -180,6 +185,10 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
 
         {/* Formulário Renda Variável */}
         <TabsContent value="variavel" className="space-y-4 mt-4">
+          <div className="flex items-center space-x-2 pb-2">
+            <Switch id="international-mode" checked={isInternational} onCheckedChange={setIsInternational} />
+            <Label htmlFor="international-mode" className="cursor-pointer">Ativo Internacional</Label>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="ticker">Ticker *</Label>
@@ -292,7 +301,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                 value={valorAtual}
                 onChange={(e) => setValorAtual(e.target.value)}
               />
-              </div>
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="indiceReferencia">Índice de Referência</Label>
@@ -364,8 +373,8 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         </TabsContent>
       </Tabs>
 
-      <Button 
-        onClick={handleCalculate} 
+      <Button
+        onClick={handleCalculate}
         disabled={isCalculating}
         className="w-full"
       >

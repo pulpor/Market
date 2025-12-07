@@ -55,6 +55,7 @@ export async function loadAssets(): Promise<Asset[]> {
             data_vencimento: asset.data_vencimento ?? undefined,
             data_aplicacao: (asset as any).data_aplicacao ?? undefined,
             valor_atual_rf: asset.valor_atual_rf ? parseFloat(asset.valor_atual_rf) : undefined,
+            is_international: asset.is_international ?? false,
           }));
           // Dados do Supabase já devem ter UUIDs válidos; ainda assim, validamos por segurança
           const fixed = list.map(a => (uuidValidate(a.id) && uuidVersion(a.id) === 4) ? a : { ...a, id: uuidv4() });
@@ -219,6 +220,8 @@ export async function saveAssets(assets: Asset[]): Promise<boolean> {
                 data_vencimento: asset.data_vencimento ?? null,
                 data_aplicacao: (asset as any).data_aplicacao ?? null,
                 valor_atual_rf: asset.valor_atual_rf ?? null,
+                // Campo internacional
+                is_international: asset.is_international ?? false,
               })),
               {
                 onConflict: 'id',

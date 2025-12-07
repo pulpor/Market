@@ -1,5 +1,5 @@
 import { CalculatedAsset } from "@/types/asset";
-import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign, Edit, Calendar, Landmark } from "lucide-react";
+import { TrendingUp, TrendingDown, Trash2, ChevronDown, Percent, TrendingUp as TrendingUpIcon, DollarSign, Edit, Calendar, Landmark, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
@@ -83,7 +83,12 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
       style={cardStyle}
       className="rounded-xl p-6 text-white shadow-lg hover:shadow-xl transition-all duration-300 relative group"
     >
-      {/* Botões de ação */}
+      {/* Exibe alerta de erro se houver */}
+      {(asset as any).error && (
+        <div className="mb-3 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+          <p className="text-xs text-red-200">{(asset as any).error}</p>
+        </div>
+      )}
       <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
         {onEdit && (
           <Button
@@ -111,7 +116,15 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
 
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-2xl font-bold">{asset.ticker_normalizado.replace(".SA", "")}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-2xl font-bold">{asset.ticker_normalizado.replace(".SA", "")}</h3>
+            {asset.is_international && (
+              <span className="bg-blue-500/20 text-blue-200 text-xs px-2 py-0.5 rounded-full flex items-center gap-1 border border-blue-500/30">
+                <Globe className="h-3 w-3" />
+                INTL
+              </span>
+            )}
+          </div>
           <p className="text-white/80 text-sm flex items-center gap-2">
             {isRendaFixa ? (
               (() => {

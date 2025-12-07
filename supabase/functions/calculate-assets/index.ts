@@ -18,6 +18,7 @@ interface Asset {
   data_vencimento?: string;
   data_aplicacao?: string;
   valor_atual_rf?: number;
+  is_international?: boolean;
 }
 
 interface YahooQuoteResponse {
@@ -36,17 +37,25 @@ interface YahooQuoteResponse {
 const cache = new Map<string, { preco_atual: number; dividend_yield: number; setor?: string; tipo_ativo: string; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos (dados reais devem ser atualizados frequentemente)
 
-function normalizeTicker(ticker: string): string {
+function normalizeTicker(ticker: string, isInternational?: boolean): string {
   const upperTicker = ticker.toUpperCase().trim();
+  
+  // Se é internacional, retorna sem sufixo
+  if (isInternational) return upperTicker;
+  
+  // Se é BDR brasileiro (usa .DF), mantém o sufixo
+  if (upperTicker.endsWith(".DF")) return upperTicker;
+  
+  // Caso contrário, adiciona .SA para ativos brasileiros
   return upperTicker.endsWith(".SA") ? upperTicker : `${upperTicker}.SA`;
 }
 
 function getTipoAtivo(ticker: string, setor?: string): string {
-  const upper = ticker.toUpperCase().replace('.SA','');
+  const upper = ticker.toUpperCase().replace('.SA', '');
   const etfPrefixes = ['BOVA', 'SMAL', 'IVVB', 'SPXI', 'PIBB', 'BRAX', 'FIND', 'MATB', 'DIVO', 'HASH', 'ISUS', 'WRLD', 'NDIV', 'BOVV', 'ECOO', 'XFIX', 'B5P2'];
   if (etfPrefixes.some(prefix => upper.startsWith(prefix))) return 'ETF';
 
-  const nonFiiUnits = new Set(['TAEE11','SANB11','SAPR11','KLBN11','ALUP11','STBP11','ITUB11','BBDC11']);
+  const nonFiiUnits = new Set(['TAEE11', 'SANB11', 'SAPR11', 'KLBN11', 'ALUP11', 'STBP11', 'ITUB11', 'BBDC11']);
   const ends11 = upper.endsWith('11');
   const setorLower = (setor || '').toLowerCase();
   const isImobiliario = setorLower.includes('imobili') || setorLower.includes('real');
@@ -61,7 +70,7 @@ function getTipoAtivo(ticker: string, setor?: string): string {
 
 function formatSetor(setor: string | undefined): string {
   if (!setor) return 'Outros';
-  
+
   // Tradução dos setores do Yahoo Finance para português
   const traducoes: Record<string, string> = {
     'Financial Services': 'Serviços Financeiros',
@@ -76,12 +85,12 @@ function formatSetor(setor: string | undefined): string {
     'Utilities': 'Utilidades Públicas',
     'Real Estate': 'Imobiliário',
   };
-  
+
   // Se for um setor conhecido do Yahoo, traduz
   if (traducoes[setor]) {
     return traducoes[setor];
   }
-  
+
   // Caso contrário, formata em Pascal Case
   return setor
     .toLowerCase()
@@ -93,78 +102,89 @@ function formatSetor(setor: string | undefined): string {
 function inferirSetorPorTicker(ticker: string): string {
   const upperTicker = ticker.toUpperCase().replace('.SA', '');
   const etfPrefixes = ['BOVA', 'SMAL', 'IVVB', 'SPXI', 'PIBB', 'BRAX', 'FIND', 'MATB', 'DIVO', 'HASH', 'ISUS', 'WRLD', 'NDIV', 'BOVV', 'ECOO', 'XFIX', 'B5P2'];
-  const nonFiiUnits = new Set(['TAEE11','SANB11','SAPR11','KLBN11','ALUP11','STBP11','ITUB11','BBDC11']);
-  if (upperTicker.endsWith('11') && !nonFiiUnits.has(upperTicker) && !etfPrefixes.some(p=>upperTicker.startsWith(p))) {
+  const nonFiiUnits = new Set(['TAEE11', 'SANB11', 'SAPR11', 'KLBN11', 'ALUP11', 'STBP11', 'ITUB11', 'BBDC11']);
+  if (upperTicker.endsWith('11') && !nonFiiUnits.has(upperTicker) && !etfPrefixes.some(p => upperTicker.startsWith(p))) {
     return 'Imobiliário';
   }
-  
+
   // Mapeamento manual dos principais tickers brasileiros
   const setorMap: Record<string, string> = {
     // Petróleo e Gás
     'PETR3': 'Energia', 'PETR4': 'Energia', 'PRIO3': 'Energia', 'RRRP3': 'Energia',
     'RECV3': 'Energia', 'ENAT3': 'Energia', 'CSAN3': 'Energia',
-    
+
     // Mineração
     'VALE3': 'Materiais Básicos', 'GOAU4': 'Materiais Básicos', 'GGBR4': 'Materiais Básicos',
-    
+
     // Bancos
     'ITUB3': 'Serviços Financeiros', 'ITUB4': 'Serviços Financeiros',
     'BBDC3': 'Serviços Financeiros', 'BBDC4': 'Serviços Financeiros',
     'BBAS3': 'Serviços Financeiros', 'SANB11': 'Serviços Financeiros',
     'BBSE3': 'Serviços Financeiros', 'BPAN4': 'Serviços Financeiros',
-    
+
     // Varejo
     'MGLU3': 'Consumo Cíclico', 'LREN3': 'Consumo Cíclico', 'AMER3': 'Consumo Cíclico',
     'VIIA3': 'Consumo Cíclico', 'PETZ3': 'Consumo Cíclico', 'BHIA3': 'Consumo Cíclico',
-    
+
     // Alimentos
     'ABEV3': 'Consumo Defensivo', 'JBSS3': 'Consumo Defensivo', 'MRFG3': 'Consumo Defensivo',
     'BEEF3': 'Consumo Defensivo', 'SMTO3': 'Consumo Defensivo',
-    
+
     // Utilities
     'ELET3': 'Utilidades Públicas', 'ELET6': 'Utilidades Públicas',
     'CMIG3': 'Utilidades Públicas', 'CMIG4': 'Utilidades Públicas',
     'TAEE11': 'Utilidades Públicas', 'CPLE6': 'Utilidades Públicas',
     'SAPR11': 'Utilidades Públicas', 'SBSP3': 'Utilidades Públicas',
-    
+
     // Construção
     'CYRE3': 'Imobiliário', 'MRVE3': 'Imobiliário', 'TEND3': 'Imobiliário',
-    
+
     // Tecnologia
     'TOTS3': 'Tecnologia', 'LWSA3': 'Tecnologia',
-    
+
     // Industrial
     'WEGE3': 'Industrial', 'RAIZ4': 'Industrial', 'RAIL3': 'Industrial',
   };
-  
+
   return setorMap[upperTicker] || 'Outros';
 }
 
-async function getYahooData(ticker: string): Promise<{ preco_atual: number; dividend_yield: number; setor?: string; tipo_ativo: string }> {
-  const normalizedTicker = normalizeTicker(ticker);
+async function getYahooData(ticker: string, isInternational?: boolean): Promise<{ preco_atual: number; dividend_yield: number; setor?: string; tipo_ativo: string }> {
+  console.log(`\n=== INICIANDO getYahooData ===`);
+  console.log(`Parâmetros: ticker="${ticker}", isInternational=${isInternational} (tipo: ${typeof isInternational})`);
+  
+  const normalizedTicker = normalizeTicker(ticker, isInternational);
+  console.log(`🔍 Buscando dados para ${ticker} (normalizado: ${normalizedTicker}, internacional: ${isInternational})`);
 
   // Cache curto para evitar excesso de chamadas (preço + DY TTM)
   const cached = cache.get(normalizedTicker);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`✅ Cache hit para ${normalizedTicker}`);
     return { preco_atual: cached.preco_atual, dividend_yield: cached.dividend_yield, setor: cached.setor, tipo_ativo: cached.tipo_ativo };
   }
 
   // Usa query2 com range de 1d para pegar o preço de fechamento mais recente (não ajustado)
   const urlQuote = `https://query2.finance.yahoo.com/v8/finance/chart/${normalizedTicker}?interval=1d&range=1d`;
+  console.log(`📡 URL de cotação: ${urlQuote}`);
   const urlDiv = `https://query2.finance.yahoo.com/v8/finance/chart/${normalizedTicker}?interval=1d&range=2y&events=div`;
-  
+
   // Busca preço atual (regularMarketPrice do último dia)
   const respQuote = await fetch(urlQuote, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
   });
   if (!respQuote.ok) throw new Error(`Falha ao buscar cotação ${respQuote.status} para ${normalizedTicker}`);
-  
+
   const dataQuote = await respQuote.json();
   const chartQuote = dataQuote?.chart?.result?.[0];
-  if (!chartQuote) throw new Error(`Chart vazio para ${normalizedTicker}`);
+  if (!chartQuote) {
+    console.error(`❌ Chart vazio para ${normalizedTicker}. Response:`, dataQuote);
+    throw new Error(`Chart vazio para ${normalizedTicker}`);
+  }
 
   const preco_atual = chartQuote?.meta?.regularMarketPrice;
+  console.log(`💰 Preço encontrado para ${normalizedTicker}: ${preco_atual}`);
   if (typeof preco_atual !== 'number' || preco_atual <= 0) {
+    console.error(`❌ Preço inválido para ${normalizedTicker}: ${preco_atual}`);
     throw new Error(`Preço inválido para ${normalizedTicker}`);
   }
 
@@ -172,7 +192,7 @@ async function getYahooData(ticker: string): Promise<{ preco_atual: number; divi
   const respDiv = await fetch(urlDiv, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
   });
-  
+
   let dividend_yield = 0;
   if (respDiv.ok) {
     const dataDiv = await respDiv.json();
@@ -180,7 +200,7 @@ async function getYahooData(ticker: string): Promise<{ preco_atual: number; divi
     const events = chartDiv?.events?.dividends ?? {};
     const oneYearAgo = Date.now() - 365 * 24 * 60 * 60 * 1000;
     let sumTTM = 0;
-    
+
     for (const key in events) {
       const evt = events[key];
       const tsMs = (evt?.date ?? 0) * 1000;
@@ -188,25 +208,25 @@ async function getYahooData(ticker: string): Promise<{ preco_atual: number; divi
         sumTTM += evt.amount; // valor por ação
       }
     }
-    
+
     dividend_yield = sumTTM > 0 ? (sumTTM / preco_atual) * 100 : 0;
   }
 
   // Tenta buscar informações do setor via quoteSummary
   let setor = 'Outros';
-  
+
   try {
     // Primeiro tenta pelo summaryProfile (mais confiável para BDRs e ações BR)
     const urlQuoteSummary = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${normalizedTicker}?modules=summaryProfile,assetProfile`;
     const respSummary = await fetch(urlQuoteSummary, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     });
-    
+
     if (respSummary.ok) {
       const dataSummary = await respSummary.json();
       const result = dataSummary?.quoteSummary?.result?.[0];
       const setorBruto = result?.assetProfile?.sector || result?.summaryProfile?.sector;
-      
+
       if (setorBruto) {
         setor = formatSetor(setorBruto);
         console.log(`Setor encontrado para ${normalizedTicker}: ${setor}`);
@@ -215,7 +235,7 @@ async function getYahooData(ticker: string): Promise<{ preco_atual: number; divi
   } catch (error) {
     console.log(`Erro ao buscar setor para ${normalizedTicker}:`, error);
   }
-  
+
   // Se ainda não achou, tenta inferir pelo ticker
   if (setor === 'Outros') {
     setor = inferirSetorPorTicker(normalizedTicker);
@@ -244,6 +264,13 @@ serve(async (req: Request) => {
     }
 
     console.log(`Processando ${ativos.length} ativos...`);
+    console.log(`📋 Ativos recebidos:`, JSON.stringify(ativos.map(a => ({ ticker: a.ticker, is_international: a.is_international })), null, 2));
+    
+    // Log específico para SPHD
+    const sphd = ativos.find(a => a.ticker.toUpperCase() === 'SPHD');
+    if (sphd) {
+      console.log(`🔍 SPHD encontrado:`, JSON.stringify(sphd, null, 2));
+    }
 
     // Busca cotações em paralelo
     function toNumber(val: unknown): number | undefined {
@@ -272,7 +299,7 @@ serve(async (req: Request) => {
     const SELIC_ANUAL_PADRAO = 12.25; // % a.a.
     const IPCA_ANUAL_PADRAO = 4.5; // % a.a.
 
-  function computeRfValorAtual(asset: Asset): number | undefined {
+    function computeRfValorAtual(asset: Asset): number | undefined {
       const principal = toNumber(asset.preco_medio);
       if (!principal || principal <= 0) return undefined;
 
@@ -287,7 +314,7 @@ serve(async (req: Request) => {
       const tipo = (asset.tipo_ativo_manual || '').toUpperCase();
       const usa252 = indice.includes('CDI') || indice.includes('SELIC') ||
         tipo.includes('LCI') || tipo.includes('LCA') || tipo.includes('CDB') || tipo.includes('TESOURO');
-      const dias = usa252 ? businessDaysBetween(dataAplic, hoje) : Math.max(0, Math.floor((hoje.getTime() - new Date(dataAplic).getTime()) / (1000*60*60*24)));
+      const dias = usa252 ? businessDaysBetween(dataAplic, hoje) : Math.max(0, Math.floor((hoje.getTime() - new Date(dataAplic).getTime()) / (1000 * 60 * 60 * 24)));
       if (dias <= 0) return principal; // sem dias decorridos, sem acréscimo
 
       let taxaAnual: number | undefined;
@@ -324,6 +351,13 @@ serve(async (req: Request) => {
 
     const promises = ativos.map(async (asset: Asset) => {
       try {
+        // Log EXTREMAMENTE específico para SPHD
+        if (asset.ticker.toUpperCase() === 'SPHD') {
+          console.log(`\n🚨 SPHD DETECTADO NA PROMISE MAP 🚨`);
+          console.log(`Asset completo:`, JSON.stringify(asset, null, 2));
+          console.log(`asset.is_international tipo: ${typeof asset.is_international}, valor: ${asset.is_international}`);
+        }
+        
         // Se tipo manual está definido (Previdência, Tesouro, etc), não busca Yahoo
         if (asset.tipo_ativo_manual) {
           const valorAplicado = asset.preco_medio;
@@ -333,7 +367,7 @@ serve(async (req: Request) => {
             : (estimado ?? valorAplicado);
           const valor_total = valorAtual;
           const rentabilidade = ((valorAtual - valorAplicado) / valorAplicado) * 100;
-          
+
           return {
             ...asset,
             ticker_normalizado: asset.ticker.toUpperCase(),
@@ -347,16 +381,37 @@ serve(async (req: Request) => {
           };
         }
 
+        // Valida se ticker parece válido (sem espaços excessivos ou muito longo)
+        const tickerTrimmed = asset.ticker.trim();
+        const hasSpaces = tickerTrimmed.includes(' ');
+        const isTooLong = tickerTrimmed.length > 20;
+        
+        if (hasSpaces || isTooLong) {
+          console.warn(`⚠️ Ticker suspeito (pode ser renda fixa): "${asset.ticker}" - tem espaços: ${hasSpaces}, comprimento: ${tickerTrimmed.length}`);
+          throw new Error(`Ticker inválido ou não suportado: "${asset.ticker}"`);
+        }
+
         // Busca via Yahoo para ativos da bolsa
-        const ticker_normalizado = normalizeTicker(asset.ticker);
-        const yahooData = await getYahooData(asset.ticker);
+        const ticker_normalizado = normalizeTicker(asset.ticker, asset.is_international);
+        
+        if (asset.ticker.toUpperCase() === 'SPHD') {
+          console.log(`\n🚨 SPHD ANTES DE CHAMAR getYahooData 🚨`);
+          console.log(`asset.ticker: "${asset.ticker}"`);
+          console.log(`asset.is_international: ${asset.is_international} (tipo: ${typeof asset.is_international})`);
+          console.log(`ticker_normalizado: "${ticker_normalizado}"`);
+        }
+        
+        console.log(`🔄 Normalizando ticker: ${asset.ticker} + is_international=${asset.is_international} => ${ticker_normalizado}`);
+        console.log(`🔄 Antes de chamar getYahooData:`, { ticker: asset.ticker, is_international: asset.is_international, tipo: typeof asset.is_international });
+        const yahooData = await getYahooData(asset.ticker, asset.is_international);
+        console.log(`✅ getYahooData retornou para ${ticker_normalizado}:`, yahooData);
 
         const preco_atual = yahooData.preco_atual;
         const valor_total = preco_atual * asset.quantidade;
         const variacao_percentual = ((preco_atual - asset.preco_medio) / asset.preco_medio) * 100;
         const pl_posicao = (preco_atual - asset.preco_medio) * asset.quantidade;
 
-        return {
+        const successReturn = {
           ...asset,
           ticker_normalizado,
           preco_atual,
@@ -367,19 +422,31 @@ serve(async (req: Request) => {
           setor: yahooData.setor,
           tipo_ativo: yahooData.tipo_ativo,
         };
+        
+        console.log(`✅ Sucesso ao processar ${asset.ticker}: ticker_normalizado=${ticker_normalizado}`);
+        return successReturn;
       } catch (error) {
-        console.error(`Erro ao processar ${asset.ticker}:`, error);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`❌ Erro ao processar ${asset.ticker}:`, errorMsg);
+        console.error(`❌ Asset antes do catch:`, { ticker: asset.ticker, is_international: asset.is_international, tipo_ativo_manual: asset.tipo_ativo_manual });
+        
+        const ticker_norm = normalizeTicker(asset.ticker, asset.is_international);
+        console.error(`❌ Ticker normalizado DENTRO DO CATCH: ${asset.ticker} + is_international=${asset.is_international} => ${ticker_norm}`);
+        
         // Retorna valores zerados em caso de erro
-        return {
+        const errorReturn = {
           ...asset,
-          ticker_normalizado: normalizeTicker(asset.ticker),
+          ticker_normalizado: ticker_norm,
           preco_atual: 0,
           valor_total: 0,
           variacao_percentual: 0,
           dividend_yield: 0,
           pl_posicao: 0,
-          error: `Não foi possível obter cotação para ${asset.ticker}`,
+          error: `Não foi possível obter cotação para ${asset.ticker}: ${errorMsg}`,
         };
+        
+        console.error(`❌ Retornando do catch:`, { ticker_normalizado: errorReturn.ticker_normalizado, is_international: errorReturn.is_international });
+        return errorReturn;
       }
     });
 

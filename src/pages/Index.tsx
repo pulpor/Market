@@ -11,7 +11,7 @@ import { DebtsState } from "@/types/debt";
 import { calculateAssets } from "@/services/yahooFinance";
 import { loadAssets, saveAssets } from "@/services/fileStorage";
 import { mergeAssetsByTicker } from "@/utils/assetUtils";
-import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid, History, Trash2, PlusCircle, Wallet, List, CreditCard } from "lucide-react";
+import { TrendingUp, LogOut, Building2, Bell, Calendar, AlertCircle, Search, Download, BarChart3, Layers, LayoutGrid, History, Trash2, PlusCircle, Wallet, List, CreditCard, Globe, ArrowRightLeft } from "lucide-react";
 import { getBrokerColor, BROKER_LIST } from "@/utils/brokerColors";
 import { toast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { getHistoryWithDiff, recordPortfolioSnapshot, updateMonthValue, deleteMonth, addMonth, initializeWithUserData } from "@/services/portfolioHistory";
+import { CurrencyConverter } from "@/components/CurrencyConverter";
 // Removido import do util PDF
 
 const Index = () => {
@@ -49,6 +50,7 @@ const Index = () => {
 
   // Filtros e ordenação
   const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
+  const [marketTypeFilter, setMarketTypeFilter] = useState<"Todos" | "Nacional" | "Internacional">("Todos");
   const KNOWN_BROKERS = useMemo(() => new Set(BROKER_LIST as readonly string[]), []);
   const normalizeBroker = useCallback((b: string): Corretora => (KNOWN_BROKERS.has(b) ? (b as Corretora) : 'Outros'), [KNOWN_BROKERS]);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -112,11 +114,31 @@ const Index = () => {
 
   // Adiciona ou atualiza o ativo e já calcula usando a lista mesclada atualizada
   const handleAddAndCalculate = (asset: Asset) => {
+    console.log("📝 Novo ativo recebido:", { ticker: asset.ticker, is_international: asset.is_international, corretora: asset.corretora });
+    
+    // Log específico para SPHD
+    if (asset.ticker.toUpperCase() === 'SPHD') {
+      console.log("🔍 SPHD recebido no handleAddAndCalculate:", JSON.stringify(asset, null, 2));
+    }
+    
     setAssets((prev) => {
       // Se estiver editando, remove o antigo antes de adicionar o novo
       const filtered = editingAsset ? prev.filter(a => a.id !== editingAsset.id) : prev;
       const updated = [...filtered, asset];
+      
+      // Log específico para SPHD após merge
+      const sphdInUpdated = updated.find(a => a.ticker.toUpperCase() === 'SPHD');
+      if (sphdInUpdated) {
+        console.log("🔍 SPHD após adicionar em array:", sphdInUpdated);
+      }
+      
       const merged = mergeAssetsByTicker(updated);
+      
+      // Log específico para SPHD após merge
+      const sphdInMerged = merged.find(a => a.ticker.toUpperCase() === 'SPHD');
+      if (sphdInMerged) {
+        console.log("🔍 SPHD após merge:", sphdInMerged);
+      }
 
       if (merged.length < updated.length) {
         toast({
@@ -169,9 +191,28 @@ const Index = () => {
       return;
     }
 
+    // Log específico para SPHD
+    const sphd = assetsToUse.find(a => a.ticker.toUpperCase() === 'SPHD');
+    if (sphd) {
+      console.log("🔍 SPHD antes de calculateAssets:", sphd);
+    }
+
     setIsCalculating(true);
     try {
+      console.log("📤 Enviando para calculateAssets:", JSON.stringify(assetsToUse.map(a => ({ ticker: a.ticker, is_international: a.is_international })), null, 2));
       const result = await calculateAssets(assetsToUse);
+      console.log("✅ Resultado do calculateAssets:", result);
+      
+      // Log detalhado de ativos com erro ou preço zero
+      result.ativos.forEach(a => {
+        if (a.preco_atual <= 0 || (a as any).error) {
+          console.warn(`⚠️ ALERTA para ${a.ticker_normalizado}:`, {
+            preco_atual: a.preco_atual,
+            is_international: a.is_international,
+            error: (a as any).error
+          });
+        }
+      });
 
       // Cálculo local de RF (MVP) para garantir funcionamento mesmo sem função atualizada
       const CDI_ANUAL_PADRAO = 12.65;
@@ -305,6 +346,14 @@ const Index = () => {
       ? calculatedAssets
       : calculatedAssets.filter(a => normalizeBroker(a.corretora) === brokerFilter);
 
+    // Filtro por mercado
+    if (marketTypeFilter !== "Todos") {
+      filtered = filtered.filter(a => {
+        if (marketTypeFilter === "Internacional") return a.is_international;
+        return !a.is_international;
+      });
+    }
+
     // Filtro por busca de nome
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -331,7 +380,7 @@ const Index = () => {
     });
 
     return sorted;
-  }, [calculatedAssets, brokerFilter, searchQuery, sortKey, sortDir]);
+  }, [calculatedAssets, brokerFilter, searchQuery, sortKey, sortDir, marketTypeFilter]);
 
   // Títulos de Renda Fixa com vencimento (ordenados por data)
   const upcomingMaturities = useMemo(() => {
@@ -417,9 +466,24 @@ const Index = () => {
 
 
 
-        <Accordion type="multiple" defaultValue={["add-asset", "summary", "my-assets", "reminders", "debts", "returns", "charts"]} className="w-full space-y-4">
+        <Accordion type="multiple" defaultValue={["currency-converter", "add-asset", "summary", "my-assets", "reminders", "debts", "returns", "charts"]} className="w-full space-y-4">
 
-          {/* 1. Adicionar Ativo */}
+          {/* 1. Conversor de Moedas */}
+          <AccordionItem value="currency-converter" className="border-none bg-transparent px-0">
+            <AccordionTrigger className="hover:no-underline py-4">
+              <div className="flex items-center gap-3">
+                <div className="p-1 bg-teal-500/10 rounded-lg">
+                  <ArrowRightLeft className="h-5 w-5 text-teal-500" />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground">Conversor de Moedas</h2>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pt-2 pb-6">
+              <CurrencyConverter />
+            </AccordionContent>
+          </AccordionItem>
+
+          {/* 1.5 Adicionar Ativo */}
           <AccordionItem value="add-asset" className="border-none bg-transparent px-0">
             <AccordionTrigger className="hover:no-underline py-4">
               <div className="flex items-center gap-3">
@@ -982,7 +1046,7 @@ const Index = () => {
                 <div className="flex flex-col gap-4 mb-4">
 
                   {/* Barra de filtros/ordenação + busca */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full items-end">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 w-full items-end">
                     {/* Busca */}
                     <div className="space-y-1">
                       <div className="text-sm text-muted-foreground flex items-center gap-1"><Search className="h-4 w-4" /> Busca</div>
@@ -1023,6 +1087,23 @@ const Index = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {/* Filtrar Mercado */}
+                    <div className="space-y-1">
+                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                        <Globe className="h-4 w-4" /> Mercado
+                      </div>
+                      <Select value={marketTypeFilter} onValueChange={(v) => setMarketTypeFilter(v as any)}>
+                        <SelectTrigger className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Todos">Todos</SelectItem>
+                          <SelectItem value="Nacional">Nacional</SelectItem>
+                          <SelectItem value="Internacional">Internacional</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Filtrar Corretora */}
 
                     {/* Ordenar por */}
                     <div className="space-y-1">

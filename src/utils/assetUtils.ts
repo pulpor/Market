@@ -37,6 +37,7 @@ export function mergeAssetsByTicker(assets: Asset[]): Asset[] {
         quantidade: totalQuantity,
         preco_medio: parseFloat(weightedPrice.toFixed(2)),
         setor: asset.setor || existing.setor,
+        is_international: asset.is_international || existing.is_international,
       });
     } else {
       keyMap.set(key, { ...asset, ticker: normalizedTicker });

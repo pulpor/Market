@@ -31,8 +31,16 @@ const mockYahooData: Record<string, { preco_atual: number; dividend_yield: numbe
   "SAPR11.SA": { preco_atual: 12.80, dividend_yield: 7.0 },
 };
 
-function normalizeTicker(ticker: string): string {
+function normalizeTicker(ticker: string, isInternational?: boolean): string {
   const upperTicker = ticker.toUpperCase().trim();
+  
+  // Se é internacional, retorna sem sufixo
+  if (isInternational) return upperTicker;
+  
+  // Se é BDR brasileiro (usa .DF), mantém o sufixo
+  if (upperTicker.endsWith(".DF")) return upperTicker;
+  
+  // Caso contrário, adiciona .SA para ativos brasileiros
   return upperTicker.endsWith(".SA") ? upperTicker : `${upperTicker}.SA`;
 }
 
@@ -61,7 +69,7 @@ function setCachedData(ticker: string, data: { preco_atual: number; dividend_yie
   });
 }
 
-function getYahooData(ticker: string): { preco_atual: number; dividend_yield: number } {
+function getYahooData(ticker: string, isInternational?: boolean): { preco_atual: number; dividend_yield: number } {
   // Verifica cache primeiro
   const cached = getCachedData(ticker);
   if (cached) {
@@ -91,8 +99,8 @@ export async function calculateAssets(assets: Asset[]): Promise<CalculateRespons
 
   // Primeiro pass: calcula métricas por ativo
   const baseAssets = assets.map((asset) => {
-    const ticker_normalizado = normalizeTicker(asset.ticker);
-    const yahooData = getYahooData(ticker_normalizado);
+    const ticker_normalizado = normalizeTicker(asset.ticker, asset.is_international);
+    const yahooData = getYahooData(ticker_normalizado, asset.is_international);
     const tipo_ativo = getTipoAtivo(asset.ticker);
 
     const preco_atual = yahooData.preco_atual;
