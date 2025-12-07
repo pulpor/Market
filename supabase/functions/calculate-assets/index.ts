@@ -37,6 +37,43 @@ interface YahooQuoteResponse {
 const cache = new Map<string, { preco_atual: number; dividend_yield: number; setor?: string; tipo_ativo: string; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutos (dados reais devem ser atualizados frequentemente)
 
+// Cache de taxa de câmbio
+let exchangeRateCache: { rate: number; timestamp: number } | null = null;
+const EXCHANGE_RATE_TTL = 60 * 60 * 1000; // 1 hora
+
+async function getUSDtoBRLRate(): Promise<number> {
+  // Verifica cache primeiro
+  if (exchangeRateCache && Date.now() - exchangeRateCache.timestamp < EXCHANGE_RATE_TTL) {
+    console.log(`💱 Taxa de câmbio do cache: ${exchangeRateCache.rate}`);
+    return exchangeRateCache.rate;
+  }
+
+  try {
+    // Tenta usar a API do Yahoo Finance para USD/BRL
+    const response = await fetch('https://query2.finance.yahoo.com/v8/finance/chart/USDBRL=X?interval=1d&range=1d', {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      const rate = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (typeof rate === 'number' && rate > 0) {
+        exchangeRateCache = { rate, timestamp: Date.now() };
+        console.log(`💱 Taxa de câmbio USD/BRL atualizada: ${rate}`);
+        return rate;
+      }
+    }
+  } catch (error) {
+    console.warn(`⚠️ Erro ao buscar taxa de câmbio:`, error);
+  }
+
+  // Fallback: usa taxa aproximada (atualizar conforme necessário)
+  const fallbackRate = 5.25; // Taxa aproximada em 07/12/2025
+  exchangeRateCache = { rate: fallbackRate, timestamp: Date.now() };
+  console.log(`💱 Usando taxa de câmbio fallback: ${fallbackRate}`);
+  return fallbackRate;
+}
+
 function normalizeTicker(ticker: string, isInternational?: boolean): string {
   const upperTicker = ticker.toUpperCase().trim();
   
@@ -182,10 +219,20 @@ async function getYahooData(ticker: string, isInternational?: boolean): Promise<
   }
 
   const preco_atual = chartQuote?.meta?.regularMarketPrice;
-  console.log(`💰 Preço encontrado para ${normalizedTicker}: ${preco_atual}`);
+  const currency = chartQuote?.meta?.currency || 'USD';
+  console.log(`💰 Preço encontrado para ${normalizedTicker}: ${preco_atual} ${currency}`);
   if (typeof preco_atual !== 'number' || preco_atual <= 0) {
     console.error(`❌ Preço inválido para ${normalizedTicker}: ${preco_atual}`);
     throw new Error(`Preço inválido para ${normalizedTicker}`);
+  }
+
+  // Converte para BRL se for ativo internacional em USD
+  let precoEmBRL = preco_atual;
+  if (isInternational && currency === 'USD') {
+    console.log(`💱 Convertendo ${preco_atual} USD para BRL...`);
+    const taxaCambio = await getUSDtoBRLRate();
+    precoEmBRL = preco_atual * taxaCambio;
+    console.log(`💱 ${preco_atual} USD × ${taxaCambio} = ${precoEmBRL.toFixed(2)} BRL`);
   }
 
   // Busca dividendos dos últimos 12 meses (TTM)
@@ -243,7 +290,7 @@ async function getYahooData(ticker: string, isInternational?: boolean): Promise<
 
   // Determina tipo_ativo somente após resolver setor
   const tipo_ativo = getTipoAtivo(ticker, setor);
-  const result = { preco_atual, dividend_yield: Number(dividend_yield.toFixed(2)), setor, tipo_ativo };
+  const result = { preco_atual: precoEmBRL, dividend_yield: Number(dividend_yield.toFixed(2)), setor, tipo_ativo };
   cache.set(normalizedTicker, { ...result, timestamp: Date.now() });
   return result;
 }

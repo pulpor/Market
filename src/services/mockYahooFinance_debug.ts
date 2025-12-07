@@ -29,6 +29,10 @@ const mockYahooData: Record<string, { preco_atual: number; dividend_yield: numbe
   "TASA4.SA": { preco_atual: 8.20, dividend_yield: 6.8 },
   "ECOD3.SA": { preco_atual: 18.50, dividend_yield: 5.5 },
   "SAPR11.SA": { preco_atual: 12.80, dividend_yield: 7.0 },
+  // Ativos internacionais (em USD, serão convertidos)
+  "SPHD": { preco_atual: 47.84, dividend_yield: 3.5 },
+  "AAPL": { preco_atual: 278.78, dividend_yield: 0.4 },
+  "MSFT": { preco_atual: 483.16, dividend_yield: 0.7 },
 };
 
 function normalizeTicker(ticker: string, isInternational?: boolean): string {
@@ -70,21 +74,32 @@ function setCachedData(ticker: string, data: { preco_atual: number; dividend_yie
 }
 
 function getYahooData(ticker: string, isInternational?: boolean): { preco_atual: number; dividend_yield: number } {
-  // Verifica cache primeiro
+  // Verifica cache primeiro - MAS IGNORA PARA TICKERS INTERNACIONAIS (precisa reconverter)
   const cached = getCachedData(ticker);
-  if (cached) {
+  if (cached && !isInternational) {
     console.log(`📦 Cache hit para ${ticker}:`, cached);
     return cached;
   }
 
   // Simula busca no Yahoo Finance
-  const data = mockYahooData[ticker] || {
+  let data = mockYahooData[ticker] || {
     // Valores aleatórios para tickers não mockados
     preco_atual: parseFloat((Math.random() * 100 + 10).toFixed(2)),
     dividend_yield: parseFloat((Math.random() * 15).toFixed(2)),
   };
 
-  console.log(`🔍 Dados do mock para ${ticker}:`, data);
+  console.log(`🔍 Dados do mock para ${ticker}:`, data, `isInternational: ${isInternational}`);
+
+  // Se é ativo internacional, converte de USD para BRL
+  if (isInternational) {
+    const TAXA_CAMBIO_PADRAO = 5.25; // Taxa padrão de câmbio USD/BRL
+    const precoEmBRL = parseFloat((data.preco_atual * TAXA_CAMBIO_PADRAO).toFixed(2));
+    console.log(`💱 ${ticker} é INTERNACIONAL - Convertendo ${data.preco_atual} USD → ${precoEmBRL} BRL`);
+    data = {
+      ...data,
+      preco_atual: precoEmBRL,
+    };
+  }
 
   // Armazena no cache
   setCachedData(ticker, data);
