@@ -140,21 +140,25 @@ export function PortfolioIndexComparison({
         const mergedData: ChartData[] = last12Months.map((month, index) => {
           const portfolio = portfolioMonthly.find((d) => d.date === month);
 
-          // Calcula retorno ACUMULADO dos índices até este mês
-          let ipcaAccum = 0;
-          let selicAccum = 0;
-          let cdiAccum = 0;
+          // Calcula retorno ACUMULADO dos índices (composição mensal) até este mês
+          let ipcaFactor = 1;
+          let selicFactor = 1;
+          let cdiFactor = 1;
 
           for (let i = 0; i <= index; i++) {
             const m = last12Months[i];
             const ipcaMonth = finalIPCA.find((d) => d.date.startsWith(m));
             const selicMonth = finalSELIC.find((d) => d.date.startsWith(m));
             const cdiMonth = finalCDI.find((d) => d.date.startsWith(m));
-            
-            ipcaAccum += ipcaMonth?.value || 0;
-            selicAccum += selicMonth?.value || 0;
-            cdiAccum += cdiMonth?.value || 0;
+
+            ipcaFactor *= 1 + (ipcaMonth?.value || 0) / 100;
+            selicFactor *= 1 + (selicMonth?.value || 0) / 100;
+            cdiFactor *= 1 + (cdiMonth?.value || 0) / 100;
           }
+
+          const ipcaAccum = (ipcaFactor - 1) * 100;
+          const selicAccum = (selicFactor - 1) * 100;
+          const cdiAccum = (cdiFactor - 1) * 100;
 
           return {
             period: month,

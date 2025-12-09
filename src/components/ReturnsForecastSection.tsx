@@ -52,6 +52,7 @@ export function ReturnsForecastSection(props: Props) {
 
   const [expDesc, setExpDesc] = useState<string>("");
   const [expAmount, setExpAmount] = useState<string>("");
+  const [editingExpId, setEditingExpId] = useState<string | null>(null);
 
   const [salaryInput, setSalaryInput] = useState<string>("");
 
@@ -141,12 +142,32 @@ export function ReturnsForecastSection(props: Props) {
 
   const addExpense = async () => {
     const amt = parseFloat(expAmount || '0'); if (!expDesc || !amt) return;
-    const entry: ExpenseEntry = { id: Date.now().toString(), description: expDesc, amount: amt };
-    await save({ ...state, expenses: [...state.expenses, entry] });
+    if (editingExpId) {
+      // Editar existente
+      const updated = state.expenses.map(e => e.id === editingExpId ? { ...e, description: expDesc, amount: amt } : e);
+      await save({ ...state, expenses: updated });
+      setEditingExpId(null);
+    } else {
+      // Criar novo
+      const entry: ExpenseEntry = { id: Date.now().toString(), description: expDesc, amount: amt };
+      await save({ ...state, expenses: [...state.expenses, entry] });
+    }
     setExpDesc(''); setExpAmount('');
   };
 
   const removeExpense = async (id: string) => { await save({ ...state, expenses: state.expenses.filter(e => e.id !== id) }); };
+
+  const editExpense = (exp: ExpenseEntry) => {
+    setExpDesc(exp.description);
+    setExpAmount(exp.amount.toString());
+    setEditingExpId(exp.id);
+  };
+
+  const cancelEditExpense = () => {
+    setExpDesc('');
+    setExpAmount('');
+    setEditingExpId(null);
+  };
 
   const updateSalary = async () => {
     const val = parseFloat(salaryInput || '0');
@@ -447,17 +468,27 @@ export function ReturnsForecastSection(props: Props) {
                     <Label className="text-xs">Valor (R$)</Label>
                     <Input type="number" step="0.01" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="h-9" placeholder="0,00" />
                   </div>
-                  <Button onClick={addExpense} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
+                  {editingExpId ? (
+                    <>
+                      <Button onClick={addExpense} size="sm" className="h-9 bg-blue-600 hover:bg-blue-700">Salvar</Button>
+                      <Button onClick={cancelEditExpense} size="sm" variant="outline" className="h-9">Cancelar</Button>
+                    </>
+                  ) : (
+                    <Button onClick={addExpense} size="sm" className="h-9"><Plus className="h-4 w-4" /></Button>
+                  )}
                 </div>
 
                 <ScrollArea className="h-60 pr-4">
                   <div className="space-y-1">
                     {state.expenses.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">Nenhuma despesa extra lançada.</p>}
                     {state.expenses.slice().reverse().map(e => (
-                      <div key={e.id} className="flex items-center justify-between p-2 bg-muted/20 rounded text-sm">
+                      <div key={e.id} className={`flex items-center justify-between p-2 rounded text-sm ${editingExpId === e.id ? 'bg-blue-500/20 border border-blue-300' : 'bg-muted/20'}`}>
                         <span>{e.description}</span>
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-red-600">{formatBR(e.amount)}</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => editExpense(e)}>
+                            <Edit2 className="h-3 w-3 text-muted-foreground hover:text-blue-500" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeExpense(e.id)}>
                             <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                           </Button>
