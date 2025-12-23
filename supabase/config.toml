@@ -1,0 +1,9 @@
+project_id = "ayoyshpghrejrjjqypfv"
+
+[functions.calculate-assets]
+verify_jwt = false
+
+[functions.market-indicators]
+# Público por natureza (dados de mercado), evita exigir Authorization nos requests
+# e impede falhas de preflight/CORS quando chamado diretamente do browser.
+verify_jwt = false
