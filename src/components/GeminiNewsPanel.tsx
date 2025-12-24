@@ -4,8 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Sparkles, RefreshCw, Key, ExternalLink } from "lucide-react";
-import { fetchGeminiNews, NewsItem } from "@/services/geminiService";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Loader2, Newspaper, RefreshCw, ExternalLink, Calendar } from "lucide-react";
+import { fetchRSSNews, NewsItem } from "@/services/newsService";
 import { Asset } from "@/types/asset";
 import { toast } from "@/hooks/use-toast";
 
@@ -13,7 +21,7 @@ interface GeminiNewsPanelProps {
   assets: Asset[];
 }
 
-const STORAGE_KEY = 'gemini_news_cache';
+const STORAGE_KEY = 'market_news_cache_v3'; // Version bump to clear old cached order
 
 export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
   const [news, setNews] = useState<NewsItem[]>(() => {
@@ -29,22 +37,10 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
     } catch { return null; }
   });
   
+  const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
-  const [showKeyInput, setShowKeyInput] = useState(!apiKey);
-
-  const handleSaveKey = (key: string) => {
-    setApiKey(key);
-    localStorage.setItem('gemini_api_key', key);
-    if (key) setShowKeyInput(false);
-  };
 
   const loadNews = async () => {
-    if (!apiKey) {
-      setShowKeyInput(true);
-      return;
-    }
-
     if (assets.length === 0) {
       toast({
         title: "Carteira vazia",
@@ -57,10 +53,9 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
     setLoading(true);
     try {
       const tickers = assets.map(a => a.ticker);
-      // Limit to unique tickers to save tokens and avoid duplicates
       const uniqueTickers = Array.from(new Set(tickers));
       
-      const items = await fetchGeminiNews(uniqueTickers, apiKey);
+      const items = await fetchRSSNews(uniqueTickers);
       setNews(items);
       
       const now = new Date().toLocaleString();
@@ -72,16 +67,15 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
 
       toast({
         title: "Notícias atualizadas",
-        description: "As últimas novidades foram carregadas com sucesso.",
+        description: `${items.length} notícias carregadas com sucesso.`,
       });
     } catch (error) {
       console.error(error);
       toast({
         title: "Erro ao carregar notícias",
-        description: "Verifique sua chave API ou tente novamente mais tarde.",
+        description: "Tente novamente mais tarde.",
         variant: "destructive"
       });
-      setShowKeyInput(true);
     } finally {
       setLoading(false);
     }
@@ -108,13 +102,10 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-yellow-500" />
-            <CardTitle>Gemini Market Insights</CardTitle>
+            <Newspaper className="h-5 w-5 text-blue-500" />
+            <CardTitle>Notícias de Mercado</CardTitle>
           </div>
           <div className="flex gap-2">
-             <Button variant="ghost" size="icon" onClick={() => setShowKeyInput(!showKeyInput)} title="Configurar API Key">
-              <Key className="h-4 w-4" />
-            </Button>
             <Button variant="outline" size="sm" onClick={loadNews} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               Atualizar
@@ -122,25 +113,16 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
           </div>
         </div>
         <CardDescription>
-          Notícias e previsões baseadas em IA para sua carteira.
+          Notícias mais recentes sobre seus ativos via Google News.
           {lastUpdated && <span className="block text-xs mt-1 opacity-70">Última atualização: {lastUpdated}</span>}
         </CardDescription>
       </CardHeader>
       
       <CardContent className="flex-1 overflow-hidden p-0">
-        {showKeyInput && (
+        {news.length === 0 && !loading && (
           <div className="p-4 bg-muted/50 border-b">
-            <div className="flex gap-2">
-              <Input 
-                type="password" 
-                placeholder="Cole sua Gemini API Key aqui..." 
-                value={apiKey}
-                onChange={(e) => handleSaveKey(e.target.value)}
-              />
-              <Button onClick={() => { if(apiKey) { setShowKeyInput(false); loadNews(); } }}>Salvar</Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Sua chave é salva apenas no navegador localmente. <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline hover:text-primary">Obter chave gratuita</a>
+            <p className="text-sm text-muted-foreground text-center">
+              Clique em "Atualizar" para buscar as últimas notícias dos seus ativos.
             </p>
           </div>
         )}
@@ -148,14 +130,20 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
         <ScrollArea className="h-[400px] p-4">
           {news.length === 0 && !loading ? (
             <div className="text-center text-muted-foreground py-8">
-              <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <Newspaper className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>Nenhuma notícia carregada.</p>
-              <p className="text-sm">Clique em "Atualizar" para gerar insights.</p>
+              <p className="text-sm">Clique em "Atualizar" para buscar notícias.</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {news.map((item, index) => (
-                <div key={index} className="border rounded-lg p-4 bg-card hover:bg-accent/50 transition-colors">
+              {[...news]
+                .sort((a, b) => (b.sortDate ?? 0) - (a.sortDate ?? 0))
+                .map((item, index) => (
+                <div 
+                  key={index} 
+                  className="border rounded-lg p-4 bg-card hover:bg-accent/50 transition-colors cursor-pointer"
+                  onClick={() => setSelectedNews(item)}
+                >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="font-bold">
@@ -165,14 +153,15 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
                         {getSentimentLabel(item.sentiment)}
                       </Badge>
                     </div>
-                    {item.url && (
-                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
+                    {item.date && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {item.date}
+                      </span>
                     )}
                   </div>
                   <h3 className="font-semibold mb-1">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground">{item.summary}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-2">{item.summary}</p>
                   {item.source && (
                     <p className="text-xs text-muted-foreground mt-2 italic">Fonte: {item.source}</p>
                   )}
@@ -182,6 +171,60 @@ export function GeminiNewsPanel({ assets }: GeminiNewsPanelProps) {
           )}
         </ScrollArea>
       </CardContent>
+
+      <Dialog open={!!selectedNews} onOpenChange={(open) => !open && setSelectedNews(null)}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {selectedNews?.relatedAsset && (
+                <Badge variant="outline">{selectedNews.relatedAsset}</Badge>
+              )}
+              {selectedNews?.title}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedNews?.date && (
+                <span className="flex items-center gap-1 mt-1">
+                  <Calendar className="h-3 w-3" /> {selectedNews.date}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Sentimento:</span>
+              <Badge className={`${selectedNews ? getSentimentColor(selectedNews.sentiment) : ''} text-white border-none`}>
+                {selectedNews ? getSentimentLabel(selectedNews.sentiment) : ''}
+              </Badge>
+            </div>
+            
+            <div className="text-sm leading-relaxed whitespace-pre-wrap">
+              {selectedNews?.fullText || selectedNews?.summary}
+            </div>
+            
+            {selectedNews?.source && (
+              <p className="text-xs text-muted-foreground italic">
+                Fonte: {selectedNews.source}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedNews(null)}>
+              Fechar
+            </Button>
+            <Button asChild>
+              <a 
+                href={selectedNews?.url || `https://www.google.com/search?q=${encodeURIComponent(`${selectedNews?.title} ${selectedNews?.source || ''}`)}`}
+                target="_blank" 
+                rel="noopener noreferrer"
+              >
+                {selectedNews?.url ? 'Ler na fonte' : 'Buscar fonte'} <ExternalLink className="ml-2 h-4 w-4" />
+              </a>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
