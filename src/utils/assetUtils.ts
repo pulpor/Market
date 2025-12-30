@@ -26,11 +26,24 @@ export function mergeAssetsByTicker(assets: Asset[]): Asset[] {
     if (keyMap.has(key)) {
       const existing = keyMap.get(key)!;
 
+      // Combina movimentos para ativos multiaportes
+      const mergedMovs = [
+        ...(existing.movimentos || []),
+        ...(asset.movimentos || []),
+      ];
+      const hasMovements = mergedMovs.length > 0;
+
+      const totalMovCotas = hasMovements ? mergedMovs.reduce((sum, m) => sum + m.cotas, 0) : 0;
+      const totalMovValor = hasMovements ? mergedMovs.reduce((sum, m) => sum + m.valor, 0) : 0;
+
       // Calcula preço médio ponderado para renda variável
-      const totalQuantity = existing.quantidade + asset.quantidade;
-      const weightedPrice =
-        (existing.preco_medio * existing.quantidade + asset.preco_medio * asset.quantidade) /
-        totalQuantity;
+      const totalQuantity = hasMovements
+        ? totalMovCotas
+        : existing.quantidade + asset.quantidade;
+
+      const weightedPrice = hasMovements
+        ? totalMovValor / (totalMovCotas || 1)
+        : (existing.preco_medio * existing.quantidade + asset.preco_medio * asset.quantidade) / totalQuantity;
 
       keyMap.set(key, {
         ...existing,
@@ -38,6 +51,7 @@ export function mergeAssetsByTicker(assets: Asset[]): Asset[] {
         preco_medio: parseFloat(weightedPrice.toFixed(2)),
         setor: asset.setor || existing.setor,
         is_international: asset.is_international || existing.is_international,
+        movimentos: hasMovements ? mergedMovs : existing.movimentos,
       });
     } else {
       keyMap.set(key, { ...asset, ticker: normalizedTicker });

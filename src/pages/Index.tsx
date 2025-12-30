@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Asset, CalculatedAsset, PortfolioSummary, Corretora } from "@/types/asset";
+import { Asset, CalculatedAsset, PortfolioSummary, Corretora, Movement } from "@/types/asset";
 import { AssetForm } from "@/components/AssetForm";
 import { MarketBar } from "@/components/MarketBar";
 import { AssetCard } from "@/components/AssetCard";
@@ -58,13 +58,98 @@ const Index = () => {
   // Filtros e ordenação
   const [brokerFilter, setBrokerFilter] = useState<"Todas" | Corretora>("Todas");
   const [marketTypeFilter, setMarketTypeFilter] = useState<"Todos" | "Nacional" | "Internacional">("Todos");
-  const KNOWN_BROKERS = useMemo(() => new Set(BROKER_LIST as readonly string[]), []);
-  const normalizeBroker = useCallback((b: string): Corretora => (KNOWN_BROKERS.has(b) ? (b as Corretora) : 'Outros'), [KNOWN_BROKERS]);
+  const brokerAliasMap = useMemo(() => {
+    const entries: Record<string, Corretora> = {
+      "nubank": "Nubank",
+      "nu": "Nubank",
+      "xp": "XP",
+      "xp investimentos": "XP",
+      "xp investimentos s.a": "XP",
+      "clear": "Clear",
+      "clear corretora": "Clear",
+      "sofisa": "Sofisa",
+      "sofisa diretos": "Sofisa",
+      "grão": "Grão",
+      "grao": "Grão",
+      "inter": "Inter",
+      "banco inter": "Inter",
+      "nomad": "Nomad",
+      "genial": "Genial",
+      "binance": "Binance",
+      "inco": "Inco",
+      "outros": "Outros",
+    };
+    return entries;
+  }, []);
+  const normalizeBroker = useCallback((b: string): Corretora => {
+    const raw = (b || '').trim();
+    if (!raw) return 'Outros';
+    // Match exact canonical first
+    if ((BROKER_LIST as readonly string[]).includes(raw)) return raw as Corretora;
+    const key = raw.toLowerCase();
+    const hit = brokerAliasMap[key];
+    return hit || 'Outros';
+  }, [brokerAliasMap]);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [assetClassFilter, setAssetClassFilter] = useState<string>("Todos");
   const [sortKey, setSortKey] = useState<
     "valor_total" | "dividend_yield" | "quantidade" | "preco_atual" | "variacao_percentual" | "pl_posicao"
   >("valor_total");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+
+  const xnpv = useCallback((rate: number, cashflows: { date: string; amount: number }[]) => {
+    if (cashflows.length === 0) return 0;
+    const sorted = [...cashflows].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const t0 = new Date(sorted[0].date).getTime();
+    return sorted.reduce((acc, cf) => {
+      const t = (new Date(cf.date).getTime() - t0) / (1000 * 60 * 60 * 24 * 365);
+      return acc + cf.amount / Math.pow(1 + rate, t);
+    }, 0);
+  }, []);
+
+  const xirr = useCallback((cashflows: { date: string; amount: number }[]): number | undefined => {
+    if (cashflows.length < 2) return undefined;
+    const hasPos = cashflows.some(c => c.amount > 0);
+    const hasNeg = cashflows.some(c => c.amount < 0);
+    if (!hasPos || !hasNeg) return undefined;
+
+    const f = (r: number) => xnpv(r, cashflows);
+    let low = -0.9999;
+    let high = 1;
+    let fLow = f(low);
+    let fHigh = f(high);
+
+    let expand = 0;
+    while (fLow * fHigh > 0 && expand < 20) {
+      high *= 2;
+      fHigh = f(high);
+      expand += 1;
+    }
+    if (fLow * fHigh > 0) return undefined;
+
+    for (let i = 0; i < 100; i++) {
+      const mid = (low + high) / 2;
+      const fMid = f(mid);
+      if (Math.abs(fMid) < 1e-6) return mid;
+      if (fLow * fMid < 0) {
+        high = mid;
+        fHigh = fMid;
+      } else {
+        low = mid;
+        fLow = fMid;
+      }
+    }
+    return (low + high) / 2;
+  }, [xnpv]);
+
+  const assetClassOptions = useMemo(() => {
+    const classes = new Set<string>();
+    calculatedAssets.forEach((asset) => {
+      const cls = asset.tipo_ativo_manual || asset.tipo_ativo || "Outro";
+      classes.add(cls);
+    });
+    return Array.from(classes).sort((a, b) => a.localeCompare(b));
+  }, [calculatedAssets]);
 
   // Debts State
   const [debtsState, setDebtsState] = useState<DebtsState>({ financings: [], cardSpending: [], others: [], monthlyTarget: undefined });
@@ -198,6 +283,8 @@ const Index = () => {
       return;
     }
 
+    const movimentosMap = new Map<string, Movement[] | undefined>(assetsToUse.map(a => [a.id, a.movimentos]));
+
     // Log específico para SPHD
     const sphd = assetsToUse.find(a => a.ticker.toUpperCase() === 'SPHD');
     // if (sphd) {
@@ -207,6 +294,11 @@ const Index = () => {
     setIsCalculating(true);
     try {
       const result = await calculateAssets(assetsToUse);
+
+      const withMovimentos = result.ativos.map(a => ({
+        ...a,
+        movimentos: movimentosMap.get(a.id) || [],
+      }));
       
       // Log detalhado de ativos com erro ou preço zero (comentado para limpar console)
       /*
@@ -283,17 +375,23 @@ const Index = () => {
       };
 
       // Ajusta ativos usando cálculo local quando fizer sentido
-      const adjustedAssets = result.ativos.map((a) => {
+      const adjustedAssets = withMovimentos.map((a) => {
         if (!a.tipo_ativo_manual) return a;
+
+        const manualAtual = typeof a.valor_atual_rf === 'number' && a.valor_atual_rf > 0 ? a.valor_atual_rf : undefined;
         const estimado = computeRfValorAtualLocal(a);
-        if (typeof estimado === 'number' && estimado > 0) {
+
+        // Regra: se o usuário informou valor_atual_rf, usa sempre o manual; senão tenta estimar.
+        const valorAtual = manualAtual ?? (typeof estimado === 'number' && estimado > 0 ? estimado : undefined);
+
+        if (typeof valorAtual === 'number' && valorAtual > 0) {
           const valorAplicado = a.preco_medio;
-          const valorAtual = estimado;
           const valor_total = valorAtual;
-          const variacao_percentual = ((valorAtual - valorAplicado) / valorAplicado) * 100;
+          const variacao_percentual = valorAplicado > 0 ? ((valorAtual - valorAplicado) / valorAplicado) * 100 : 0;
           const pl_posicao = valorAtual - valorAplicado;
           return { ...a, preco_atual: valorAtual, valor_total, variacao_percentual, pl_posicao };
         }
+
         return a;
       });
 
@@ -307,12 +405,26 @@ const Index = () => {
       }, 0);
 
       const valorTotalCarteira = valor_total_carteira_local;
-      const enrichedAssets = adjustedAssets.map(asset => ({
+      const enrichedAssetsBase = adjustedAssets.map(asset => ({
         ...asset,
         peso_carteira: valorTotalCarteira > 0 ? (asset.valor_total / valorTotalCarteira) * 100 : 0,
         yoc: asset.preco_medio > 0 ? (asset.dividend_yield * asset.preco_atual / asset.preco_medio) : 0,
         projecao_dividendos_anual: (asset.dividend_yield / 100) * asset.valor_total,
       }));
+
+      const enrichedAssets = enrichedAssetsBase.map(asset => {
+        const movs = (asset as any).movimentos as Movement[] | undefined;
+        if (!movs || movs.length === 0 || !(asset.valor_total > 0)) return asset;
+
+        const cashflows = movs
+          .filter(m => Number.isFinite(m.valor) && Number.isFinite(m.cotas))
+          .map(m => ({ date: m.data, amount: -m.valor }));
+        cashflows.push({ date: new Date().toISOString().slice(0, 10), amount: asset.valor_total });
+
+        const rate = xirr(cashflows);
+        if (rate === undefined || !Number.isFinite(rate)) return asset;
+        return { ...asset, xirr_percentual: rate * 100 };
+      });
 
       setCalculatedAssets(enrichedAssets);
       setSummary({
@@ -361,6 +473,14 @@ const Index = () => {
       });
     }
 
+    // Filtro por classe do ativo (Ação, FII, ETF, RF, etc.)
+    if (assetClassFilter !== "Todos") {
+      filtered = filtered.filter(a => {
+        const cls = (a.tipo_ativo_manual || a.tipo_ativo || "Outro").toLowerCase();
+        return cls === assetClassFilter.toLowerCase();
+      });
+    }
+
     // Filtro por busca de nome
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -387,7 +507,7 @@ const Index = () => {
     });
 
     return sorted;
-  }, [calculatedAssets, brokerFilter, searchQuery, sortKey, sortDir, marketTypeFilter]);
+  }, [calculatedAssets, brokerFilter, searchQuery, sortKey, sortDir, marketTypeFilter, assetClassFilter]);
 
   // Títulos de Renda Fixa com vencimento (ordenados por data)
   const upcomingMaturities = useMemo(() => {
@@ -760,13 +880,13 @@ const Index = () => {
                   <TabsContent value="corretora">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                       {BROKER_LIST.map(corretora => {
-                        const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
+                        const assetsCorretora = displayedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
                         const valorTotal = assetsCorretora.reduce((sum, a) => sum + a.valor_total, 0);
                         const dyPonderado = assetsCorretora.reduce((sum, a) => {
-                          const participacao = a.valor_total / valorTotal;
+                          const participacao = valorTotal > 0 ? a.valor_total / valorTotal : 0;
                           return sum + a.dividend_yield * participacao;
                         }, 0);
-                        const crescimentoMedio = assetsCorretora.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsCorretora.length;
+                        const crescimentoMedio = assetsCorretora.length > 0 ? assetsCorretora.reduce((sum, a) => sum + a.variacao_percentual, 0) / assetsCorretora.length : 0;
                         const plTotal = assetsCorretora.reduce((sum, a) => sum + a.pl_posicao, 0);
 
                         return valorTotal > 0 ? (
@@ -816,7 +936,7 @@ const Index = () => {
                       </h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {BROKER_LIST.map(corretora => {
-                          const assetsCorretora = calculatedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
+                          const assetsCorretora = displayedAssets.filter(a => normalizeBroker(a.corretora) === corretora);
                           const projecaoAnual = assetsCorretora.reduce((sum, asset) => sum + asset.projecao_dividendos_anual, 0);
                           const projecaoMensal = projecaoAnual / 12;
 
@@ -1053,7 +1173,7 @@ const Index = () => {
                 <div className="flex flex-col gap-4 mb-4">
 
                   {/* Barra de filtros/ordenação + busca */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 w-full items-end">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 w-full items-end">
                     {/* Busca */}
                     <div className="space-y-1">
                       <div className="text-sm text-muted-foreground flex items-center gap-1"><Search className="h-4 w-4" /> Busca</div>
@@ -1109,6 +1229,22 @@ const Index = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
+                      {/* Filtrar Classe */}
+                      <div className="space-y-1">
+                        <div className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Layers className="h-4 w-4" /> Classe
+                        </div>
+                        <Select value={assetClassFilter} onValueChange={setAssetClassFilter}>
+                          <SelectTrigger className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Todos">Todas</SelectItem>
+                            {assetClassOptions.map((cls) => (
+                              <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
                     {/* Filtrar Corretora */}
 

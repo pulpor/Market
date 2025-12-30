@@ -11,6 +11,13 @@ export type Corretora =
   | "Binance"
   | "Outros";
 
+export interface Movement {
+  id: string;
+  data: string; // ISO date
+  valor: number; // Aporte/resgate (resgate pode ser negativo)
+  cotas: number; // Quantidade de cotas/ações nessa movimentação
+}
+
 export interface Asset {
   id: string;
   ticker: string;
@@ -25,6 +32,7 @@ export interface Asset {
   data_aplicacao?: string; // Data de aplicação (início da contagem para RF)
   valor_atual_rf?: number; // Valor atual para renda fixa
   is_international?: boolean; // Se o ativo é internacional (não adiciona .SA)
+  movimentos?: Movement[]; // Fluxos datados para fundos multiaportes
 }
 
 export interface CalculatedAsset extends Asset {
@@ -39,6 +47,7 @@ export interface CalculatedAsset extends Asset {
   projecao_dividendos_anual: number; // projeção anual de dividendos em R$
   tipo_ativo?: string; // Ação, FII, ETF, Outro
   error?: string; // Mensagem de erro se houver falha na cotação
+  xirr_percentual?: number; // Rentabilidade anualizada via fluxos datados
 }
 
 export interface PortfolioSummary {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,10 @@ const indicesReferencia = ["CDI", "IPCA", "Pré-fixado", "Selic", "IGP-M", "Outr
 
 export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCancelEdit }: AssetFormProps) {
   const [modoAtivo, setModoAtivo] = useState<"variavel" | "fixa">("variavel");
+  const [multiAporteRf, setMultiAporteRf] = useState(false);
+  type MovimentoForm = { id: string; data: string; valor: string };
+  const hojeISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [movimentosRf, setMovimentosRf] = useState<MovimentoForm[]>([]);
 
   // Campos Renda Variável
   const [ticker, setTicker] = useState("");
@@ -56,6 +60,13 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         setDataVencimento(editingAsset.data_vencimento || "");
         setDataAplicacao((editingAsset as any).data_aplicacao || "");
         setCorretora(editingAsset.corretora);
+        if (editingAsset.movimentos && editingAsset.movimentos.length > 0) {
+          setMultiAporteRf(true);
+          setMovimentosRf(editingAsset.movimentos.map(m => ({ id: m.id, data: m.data, valor: m.valor.toString() })));
+        } else {
+          setMultiAporteRf(false);
+          setMovimentosRf([]);
+        }
       } else {
         // Renda Variável
         setModoAtivo("variavel");
@@ -64,13 +75,27 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         setPrecoMedio(editingAsset.preco_medio.toString());
         setCorretora(editingAsset.corretora);
         setIsInternational(editingAsset.is_international || false);
+        setMultiAporteRf(false);
+        setMovimentosRf([]);
       }
     }
   }, [editingAsset]);
 
+  const addMovimento = () => {
+    setMovimentosRf((prev) => [...prev, { id: uuidv4(), data: hojeISO, valor: "" }]);
+  };
+
+  const updateMovimento = (id: string, field: keyof MovimentoForm, value: string) => {
+    setMovimentosRf((prev) => prev.map((m) => (m.id === id ? { ...m, [field]: value } : m)));
+  };
+
+  const removeMovimento = (id: string) => {
+    setMovimentosRf((prev) => prev.filter((m) => m.id !== id));
+  };
+
   const handleCalculate = () => {
     if (modoAtivo === "variavel") {
-      // Validação Renda Variável
+      // Validação Renda Variável (preço médio manual)
       if (!ticker || !quantidade || !precoMedio) {
         toast({
           title: "Campos obrigatórios",
@@ -110,31 +135,47 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       setIsInternational(false);
     } else {
       // Validação Renda Fixa
-      if (!nomeAtivo || !valorAplicado) {
-        toast({
-          title: "Campos obrigatórios",
-          description: "Preencha nome e valor aplicado. Valor atual pode ser calculado automaticamente.",
-          variant: "destructive",
-        });
+      if (!nomeAtivo) {
+        toast({ title: "Campos obrigatórios", description: "Preencha nome do ativo", variant: "destructive" });
         return;
       }
 
-      const valAplicado = parseFloat(valorAplicado);
+      let valAplicado = valorAplicado ? parseFloat(valorAplicado) : 0;
       const valAtual = valorAtual ? parseFloat(valorAtual) : undefined;
 
-      if (valAplicado <= 0) {
-        toast({
-          title: "Valores inválidos",
-          description: "Valor aplicado deve ser maior que zero",
-          variant: "destructive",
-        });
-        return;
+      if (multiAporteRf) {
+        const movsValidos = movimentosRf.filter(m => m.valor.trim() !== "");
+        if (movsValidos.length === 0) {
+          toast({ title: "Adicione aportes", description: "Inclua pelo menos um movimento", variant: "destructive" });
+          return;
+        }
+        valAplicado = movsValidos.reduce((sum, m) => sum + parseFloat(m.valor || "0"), 0);
+        if (!Number.isFinite(valAplicado) || valAplicado <= 0) {
+          toast({ title: "Valor inválido", description: "Somatório dos aportes deve ser maior que zero", variant: "destructive" });
+          return;
+        }
+      } else {
+        if (!valorAplicado) {
+          toast({ title: "Campos obrigatórios", description: "Preencha valor aplicado", variant: "destructive" });
+          return;
+        }
+        if (valAplicado <= 0) {
+          toast({ title: "Valores inválidos", description: "Valor aplicado deve ser maior que zero", variant: "destructive" });
+          return;
+        }
       }
+
+      const movimentosParaSalvar = multiAporteRf
+        ? movimentosRf.filter(m => m.valor.trim() !== "").map(m => ({ id: m.id, data: m.data || hojeISO, valor: parseFloat(m.valor), cotas: 1 }))
+        : undefined;
+
+      // Usa a data do primeiro aporte como aplicação se não houver data informada
+      const dataAplicacaoFinal = dataAplicacao || (multiAporteRf && movimentosParaSalvar && movimentosParaSalvar[0]?.data) || undefined;
 
       const newAsset: Asset = {
         id: editingAsset?.id || uuidv4(),
         ticker: nomeAtivo.toUpperCase().trim(),
-        quantidade: 1, // Renda fixa sempre 1 unidade
+        quantidade: 1, // Renda fixa permanece unidade lógica
         preco_medio: valAplicado,
         corretora,
         tipo_ativo_manual: tipoRendaFixa,
@@ -142,7 +183,8 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         taxa_contratada: taxaContratada ? parseFloat(taxaContratada) : undefined,
         data_vencimento: dataVencimento || undefined,
         valor_atual_rf: valAtual,
-        data_aplicacao: dataAplicacao || undefined,
+        data_aplicacao: dataAplicacaoFinal,
+        movimentos: movimentosParaSalvar,
       };
 
       onAddAndCalculate(newAsset);
@@ -154,6 +196,8 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       setTaxaContratada("");
       setDataVencimento("");
       setDataAplicacao("");
+      setMultiAporteRf(false);
+      setMovimentosRf([]);
     }
   };
 
@@ -250,6 +294,41 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
 
         {/* Formulário Renda Fixa */}
         <TabsContent value="fixa" className="space-y-4 mt-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Switch id="multiaportes-rf" checked={multiAporteRf} onCheckedChange={setMultiAporteRf} />
+                <Label htmlFor="multiaportes-rf" className="cursor-pointer">Registrar múltiplos aportes</Label>
+              </div>
+              {multiAporteRf && (
+                <Button type="button" size="sm" onClick={addMovimento} variant="secondary">Adicionar aporte</Button>
+              )}
+            </div>
+
+            {multiAporteRf && (
+              <div className="space-y-2">
+                {movimentosRf.length === 0 && (
+                  <p className="text-xs text-muted-foreground">Inclua aportes ou resgates; o valor aplicado será a soma.</p>
+                )}
+                {movimentosRf.map((m) => (
+                  <div key={m.id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                    <div className="space-y-1">
+                      <Label>Data</Label>
+                      <Input type="date" value={m.data} onChange={(e) => updateMovimento(m.id, "data", e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Valor (R$)</Label>
+                      <Input type="number" step="0.01" value={m.valor} onChange={(e) => updateMovimento(m.id, "valor", e.target.value)} />
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="button" variant="ghost" onClick={() => removeMovimento(m.id)} className="mt-2">Remover</Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="nomeAtivo">Nome do Ativo *</Label>
@@ -277,18 +356,20 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="valorAplicado">Valor Aplicado (R$) *</Label>
-              <Input
-                id="valorAplicado"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="Ex: 10000.00"
-                value={valorAplicado}
-                onChange={(e) => setValorAplicado(e.target.value)}
-              />
-            </div>
+            {!multiAporteRf && (
+              <div className="space-y-2">
+                <Label htmlFor="valorAplicado">Valor Aplicado (R$) *</Label>
+                <Input
+                  id="valorAplicado"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="Ex: 10000.00"
+                  value={valorAplicado}
+                  onChange={(e) => setValorAplicado(e.target.value)}
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="valorAtual">Valor Atual (R$)</Label>

@@ -53,6 +53,21 @@ export async function loadAssets(): Promise<Asset[]> {
             valor_atual_rf: asset.valor_atual_rf ? parseFloat(asset.valor_atual_rf) : undefined,
             is_international: asset.is_international ?? false,
           }));
+
+          // Preserva movimentos armazenados apenas no localStorage
+          try {
+            const localData = localStorage.getItem(storageKey);
+            if (localData) {
+              const localAssets = JSON.parse(localData) as Asset[];
+              const localMap = new Map(localAssets.map(a => [a.id, a.movimentos]));
+              list.forEach(a => {
+                const movs = localMap.get(a.id);
+                if (movs && movs.length > 0) {
+                  (a as Asset).movimentos = movs;
+                }
+              });
+            }
+          } catch { }
           // Dados do Supabase já devem ter UUIDs válidos; ainda assim, validamos por segurança
           const fixed = list.map(a => (uuidValidate(a.id) && uuidVersion(a.id) === 4) ? a : { ...a, id: uuidv4() });
           if (JSON.stringify(fixed) !== JSON.stringify(list)) {

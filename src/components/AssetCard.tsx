@@ -240,6 +240,16 @@ export function AssetCard({ asset, onRemove, onEdit }: AssetCardProps) {
             <span className="text-sm font-semibold text-white">{formatPercent(asset.peso_carteira, 2)}</span>
           </div>
 
+          {!isRendaFixa && typeof asset.xirr_percentual === "number" && (
+            <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
+              <div className="flex items-center gap-2">
+                <TrendingUpIcon className="h-4 w-4 text-white/60" />
+                <span className="text-sm text-white/80">Rent. no tempo (XIRR)</span>
+              </div>
+              <span className="text-sm font-semibold text-green-200">{formatPercent(asset.xirr_percentual, 2, true)}</span>
+            </div>
+          )}
+
           {!isRendaFixa && (
             <>
               <div className="flex items-center justify-between p-2 bg-white/5 rounded-lg">
