@@ -169,21 +169,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const provider = new GoogleAuthProvider()
 
-      // Em produção (Vercel) ou quando o navegador usa isolamento cross-origin,
-      // o fluxo por popup pode falhar/travar por políticas COOP. Redirect é mais robusto.
-      const preferRedirect =
-        import.meta.env.PROD || (typeof window !== 'undefined' && window.crossOriginIsolated)
+      // Popups frequentemente falham em produção por políticas COOP/terceiros.
+      // Então, no site online, use sempre Redirect (mais confiável).
+      const isLocalDev =
+        import.meta.env.DEV &&
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 
-      if (preferRedirect) {
+      if (!isLocalDev) {
         await signInWithRedirect(firebaseAuth, provider)
         return
       }
 
+      // Em localhost, popup é mais confortável; se falhar, cai pro redirect.
       try {
         await signInWithPopup(firebaseAuth, provider)
       } catch (err: unknown) {
         const msg = getErrorMessage(err)
-        // Fallback para redirect quando popup é bloqueado/indisponível.
         if (
           msg.includes('auth/popup-blocked') ||
           msg.includes('auth/popup-closed-by-user') ||
