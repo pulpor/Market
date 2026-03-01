@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     proxy: {
+      "/api": {
+        target: "http://127.0.0.1:3000",
+        changeOrigin: true,
+      },
       "/bcb-api": {
         target: "https://api.bcb.gov.br/dados/serie",
         changeOrigin: true,

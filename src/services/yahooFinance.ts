@@ -1,20 +1,10 @@
 import { Asset, CalculateResponse } from "@/types/asset";
 
 export async function calculateAssets(assets: Asset[]): Promise<CalculateResponse> {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY para usar dados reais.");
-  }
-
-  const functionUrl = `${supabaseUrl}/functions/v1/calculate-assets`;
-
-  const response = await fetch(functionUrl, {
+  const response = await fetch('/api/calculate-assets', {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${supabaseKey}`,
     },
     body: JSON.stringify({ ativos: assets }),
   });

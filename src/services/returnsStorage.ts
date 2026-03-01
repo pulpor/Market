@@ -1,5 +1,6 @@
 import { ReturnsForecastState } from "@/types/returns";
-import { supabase } from "@/lib/supabase";
+import { firebaseAuth, firestoreDb, isFirebaseConfigured } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 const BASE_LOCAL_KEY = "dashboard-b3-returns";
 
@@ -7,8 +8,7 @@ interface StoredReturnsMap {
   [month: string]: ReturnsForecastState;
 }
 
-// Untyped alias
-const sb: any = supabase;
+const hasFirebase = isFirebaseConfigured;
 
 function getStorageKey(userId: string) {
   return `${BASE_LOCAL_KEY}-${userId}`;
@@ -16,41 +16,42 @@ function getStorageKey(userId: string) {
 
 export async function loadReturns(month: string): Promise<ReturnsForecastState> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const uid = firebaseAuth?.currentUser?.uid;
+    if (!uid) {
+      return { month, salary: undefined, freelas: [], dividends: [], receivables: [], expenses: [] };
+    }
 
-    if (session?.user) {
-      const storageKey = getStorageKey(session.user.id);
+    const storageKey = getStorageKey(uid);
 
-      // 1. Try Supabase
+    // 1. Try Firestore
+    if (hasFirebase && firestoreDb) {
       try {
-        const { data } = await sb
-          .from('returns_forecast')
-          .select('content')
-          .eq('user_id', session.user.id)
-          .eq('month', month)
-          .maybeSingle();
-
-        if (data?.content) {
-          // Update local cache for this month
-          updateLocalCache(storageKey, month, data.content);
-          return data.content;
-        }
-      } catch (e) {
-        console.warn("Erro ao carregar returns do Supabase", e);
-      }
-
-      // 2. Fallback localStorage (User Specific)
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (raw) {
-          const parsed: StoredReturnsMap = JSON.parse(raw);
-          if (parsed && typeof parsed === 'object') {
-            if (parsed[month]) return parsed[month];
+        const ref = doc(firestoreDb, 'users', uid, 'returns', month);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const content = (snap.data() as { content?: unknown })?.content;
+          if (content) {
+            const typed = content as ReturnsForecastState;
+            updateLocalCache(storageKey, month, typed);
+            return typed;
           }
         }
       } catch (e) {
-        console.warn("Não foi possível carregar previsão de retornos", e);
+        console.warn("Erro ao carregar returns do Firestore", e);
       }
+    }
+
+    // 2. Fallback localStorage (User Specific)
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed: StoredReturnsMap = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed[month]) return parsed[month];
+        }
+      }
+    } catch (e) {
+      console.warn("Não foi possível carregar previsão de retornos", e);
     }
   } catch (e) {
     console.error("Erro geral em loadReturns:", e);
@@ -62,31 +63,29 @@ export async function loadReturns(month: string): Promise<ReturnsForecastState> 
 
 export async function saveReturns(state: ReturnsForecastState): Promise<boolean> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const storageKey = getStorageKey(session.user.id);
+    const uid = firebaseAuth?.currentUser?.uid;
+    if (!uid) return false;
 
-      // 1. Save local
-      updateLocalCache(storageKey, state.month, state);
+    const storageKey = getStorageKey(uid);
 
-      // 2. Save Supabase
-      const { error } = await sb
-        .from('returns_forecast')
-        .upsert({
-          user_id: session.user.id,
-          month: state.month,
+    // 1. Save local
+    updateLocalCache(storageKey, state.month, state);
+
+    // 2. Save Firestore
+    if (hasFirebase && firestoreDb) {
+      try {
+        const ref = doc(firestoreDb, 'users', uid, 'returns', state.month);
+        await setDoc(ref, {
           content: state,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id,month' });
-
-      if (error) {
-        console.error("Erro ao salvar returns no Supabase", error);
-      } else {
+          updated_at: new Date().toISOString(),
+        }, { merge: true });
         return true;
+      } catch (e) {
+        console.error("Erro ao salvar returns no Firestore", e);
       }
     }
   } catch (e) {
-    console.error("Erro ao conectar com Supabase", e);
+    console.error("Erro ao salvar returns", e);
   }
   return false;
 }

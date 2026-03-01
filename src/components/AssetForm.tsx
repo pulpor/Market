@@ -45,6 +45,37 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
   const [dataVencimento, setDataVencimento] = useState("");
   const [dataAplicacao, setDataAplicacao] = useState("");
 
+  const parsePtNumber = (value: string): number => {
+    const normalized = value.replace(/\./g, "").replace(/,/g, ".");
+    const num = parseFloat(normalized);
+    return Number.isFinite(num) ? num : NaN;
+  };
+
+  const formatNumber = (value: string | number, decimals = 2): string => {
+    if (value === "" || value === undefined || value === null) return "";
+    const num = typeof value === "number" ? value : parsePtNumber(value);
+    if (!Number.isFinite(num)) return "";
+    return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(num);
+  };
+
+  const sanitizeNumeric = (raw: string, allowDecimal = true): string => {
+    const cleaned = raw.replace(allowDecimal ? /[^0-9.,]/g : /[^0-9]/g, "");
+    return cleaned;
+  };
+
+  const handleInputChange = (raw: string, allowDecimal: boolean, setter: (v: string) => void) => {
+    setter(sanitizeNumeric(raw, allowDecimal));
+  };
+
+  const handleInputBlur = (value: string, decimals: number, setter: (v: string) => void) => {
+    const num = parsePtNumber(value);
+    if (!Number.isFinite(num)) {
+      setter("");
+      return;
+    }
+    setter(formatNumber(num, decimals));
+  };
+
   // Preenche o formulário quando editingAsset mudar
   useEffect(() => {
     if (editingAsset) {
@@ -53,16 +84,16 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         setModoAtivo("fixa");
         setNomeAtivo(editingAsset.ticker);
         setTipoRendaFixa(editingAsset.tipo_ativo_manual as typeof tiposRendaFixa[number]);
-        setValorAplicado(editingAsset.preco_medio.toString());
-        setValorAtual((editingAsset.valor_atual_rf || editingAsset.preco_medio).toString());
+        setValorAplicado(formatNumber(editingAsset.preco_medio, 2));
+        setValorAtual(editingAsset.valor_atual_rf ? formatNumber(editingAsset.valor_atual_rf, 2) : "");
         setIndiceReferencia((editingAsset.indice_referencia || "CDI") as typeof indicesReferencia[number]);
-        setTaxaContratada(editingAsset.taxa_contratada?.toString() || "");
+        setTaxaContratada(editingAsset.taxa_contratada ? formatNumber(editingAsset.taxa_contratada, 2) : "");
         setDataVencimento(editingAsset.data_vencimento || "");
         setDataAplicacao((editingAsset as any).data_aplicacao || "");
         setCorretora(editingAsset.corretora);
         if (editingAsset.movimentos && editingAsset.movimentos.length > 0) {
           setMultiAporteRf(true);
-          setMovimentosRf(editingAsset.movimentos.map(m => ({ id: m.id, data: m.data, valor: m.valor.toString() })));
+          setMovimentosRf(editingAsset.movimentos.map(m => ({ id: m.id, data: m.data, valor: formatNumber(m.valor, 2) })));
         } else {
           setMultiAporteRf(false);
           setMovimentosRf([]);
@@ -71,8 +102,8 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         // Renda Variável
         setModoAtivo("variavel");
         setTicker(editingAsset.ticker);
-        setQuantidade(editingAsset.quantidade.toString());
-        setPrecoMedio(editingAsset.preco_medio.toString());
+        setQuantidade(formatNumber(editingAsset.quantidade, 0));
+        setPrecoMedio(formatNumber(editingAsset.preco_medio, 2));
         setCorretora(editingAsset.corretora);
         setIsInternational(editingAsset.is_international || false);
         setMultiAporteRf(false);
@@ -105,8 +136,8 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         return;
       }
 
-      const qtd = parseFloat(quantidade);
-      const preco = parseFloat(precoMedio);
+      const qtd = parsePtNumber(quantidade);
+      const preco = parsePtNumber(precoMedio);
 
       if (qtd <= 0 || preco <= 0) {
         toast({
@@ -140,8 +171,8 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
         return;
       }
 
-      let valAplicado = valorAplicado ? parseFloat(valorAplicado) : 0;
-      const valAtual = valorAtual ? parseFloat(valorAtual) : undefined;
+      let valAplicado = valorAplicado ? parsePtNumber(valorAplicado) : 0;
+      const valAtual = valorAtual ? parsePtNumber(valorAtual) : undefined;
 
       if (multiAporteRf) {
         const movsValidos = movimentosRf.filter(m => m.valor.trim() !== "");
@@ -149,7 +180,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
           toast({ title: "Adicione aportes", description: "Inclua pelo menos um movimento", variant: "destructive" });
           return;
         }
-        valAplicado = movsValidos.reduce((sum, m) => sum + parseFloat(m.valor || "0"), 0);
+        valAplicado = movsValidos.reduce((sum, m) => sum + parsePtNumber(m.valor || "0"), 0);
         if (!Number.isFinite(valAplicado) || valAplicado <= 0) {
           toast({ title: "Valor inválido", description: "Somatório dos aportes deve ser maior que zero", variant: "destructive" });
           return;
@@ -166,7 +197,7 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
       }
 
       const movimentosParaSalvar = multiAporteRf
-        ? movimentosRf.filter(m => m.valor.trim() !== "").map(m => ({ id: m.id, data: m.data || hojeISO, valor: parseFloat(m.valor), cotas: 1 }))
+        ? movimentosRf.filter(m => m.valor.trim() !== "").map(m => ({ id: m.id, data: m.data || hojeISO, valor: parsePtNumber(m.valor), cotas: 1 }))
         : undefined;
 
       // Usa a data do primeiro aporte como aplicação se não houver data informada
@@ -249,12 +280,12 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
               <Label htmlFor="quantidade">Quantidade *</Label>
               <Input
                 id="quantidade"
-                type="number"
-                step="1"
-                min="1"
+                type="text"
+                inputMode="numeric"
                 placeholder="Ex: 100"
                 value={quantidade}
-                onChange={(e) => setQuantidade(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value, false, setQuantidade)}
+                onBlur={() => handleInputBlur(quantidade, 0, setQuantidade)}
               />
             </div>
 
@@ -262,12 +293,12 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
               <Label htmlFor="preco_medio">Preço Médio (R$) *</Label>
               <Input
                 id="preco_medio"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="Ex: 27.50"
+                type="text"
+                inputMode="decimal"
+                placeholder="Ex: 27,50"
                 value={precoMedio}
-                onChange={(e) => setPrecoMedio(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value, true, setPrecoMedio)}
+                onBlur={() => handleInputBlur(precoMedio, 2, setPrecoMedio)}
               />
             </div>
 
@@ -318,7 +349,14 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                     </div>
                     <div className="space-y-1">
                       <Label>Valor (R$)</Label>
-                      <Input type="number" step="0.01" value={m.valor} onChange={(e) => updateMovimento(m.id, "valor", e.target.value)} />
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        value={m.valor}
+                        onChange={(e) => updateMovimento(m.id, "valor", sanitizeNumeric(e.target.value, true))}
+                        onBlur={() => updateMovimento(m.id, "valor", formatNumber(parsePtNumber(m.valor), 2))}
+                        placeholder="Ex: 1.000,00"
+                      />
                     </div>
                     <div className="flex justify-end">
                       <Button type="button" variant="ghost" onClick={() => removeMovimento(m.id)} className="mt-2">Remover</Button>
@@ -361,12 +399,12 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
                 <Label htmlFor="valorAplicado">Valor Aplicado (R$) *</Label>
                 <Input
                   id="valorAplicado"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="Ex: 10000.00"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Ex: 10.000,00"
                   value={valorAplicado}
-                  onChange={(e) => setValorAplicado(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value, true, setValorAplicado)}
+                  onBlur={() => handleInputBlur(valorAplicado, 2, setValorAplicado)}
                 />
               </div>
             )}
@@ -375,12 +413,12 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
               <Label htmlFor="valorAtual">Valor Atual (R$)</Label>
               <Input
                 id="valorAtual"
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="Ex: 10850.00"
+                type="text"
+                inputMode="decimal"
+                placeholder="Ex: 10.850,00"
                 value={valorAtual}
-                onChange={(e) => setValorAtual(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value, true, setValorAtual)}
+                onBlur={() => handleInputBlur(valorAtual, 2, setValorAtual)}
               />
             </div>
 
@@ -404,11 +442,12 @@ export function AssetForm({ onAddAndCalculate, isCalculating, editingAsset, onCa
               <Label htmlFor="taxaContratada">Taxa Contratada (% a.a.)</Label>
               <Input
                 id="taxaContratada"
-                type="number"
-                step="0.01"
-                placeholder="Ex: 12.5"
+                type="text"
+                inputMode="decimal"
+                placeholder="Ex: 12,5"
                 value={taxaContratada}
-                onChange={(e) => setTaxaContratada(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value, true, setTaxaContratada)}
+                onBlur={() => handleInputBlur(taxaContratada, 2, setTaxaContratada)}
               />
             </div>
 

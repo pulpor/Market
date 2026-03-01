@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { confirmPasswordReset } from 'firebase/auth'
+import { firebaseAuth, isFirebaseConfigured } from '@/lib/firebase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,20 +11,15 @@ import { useToast } from '@/components/ui/use-toast'
 
 export default function ResetPassword() {
     const [password, setPassword] = useState('')
+    const [oobCode, setOobCode] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
     const navigate = useNavigate()
     const { toast } = useToast()
 
     useEffect(() => {
-        // Check if we have a session (Supabase handles the link magic)
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (!session) {
-                // If no session, maybe the link is invalid or expired
-                // But for the password reset flow, the link usually logs the user in automatically
-                // or provides an access token in the hash.
-                // We'll let them try to set the password; if it fails, Supabase will tell us.
-            }
-        })
+        const params = new URLSearchParams(window.location.search)
+        const code = params.get('oobCode')
+        setOobCode(code)
     }, [])
 
     const handleReset = async (e: React.FormEvent) => {
@@ -31,22 +27,25 @@ export default function ResetPassword() {
         setLoading(true)
 
         try {
-            const { error } = await supabase.auth.updateUser({
-                password: password
-            })
+            if (!isFirebaseConfigured || !firebaseAuth) {
+                throw new Error('Firebase não configurado. Configure as variáveis VITE_FIREBASE_* no .env.')
+            }
+            if (!oobCode) {
+                throw new Error('Link inválido ou expirado (código ausente). Solicite um novo link de recuperação.')
+            }
 
-            if (error) throw error
+            await confirmPasswordReset(firebaseAuth, oobCode, password)
 
             toast({
                 title: "Senha atualizada",
-                description: "Sua senha foi alterada com sucesso. Você já está logado.",
+                description: "Sua senha foi alterada com sucesso. Faça login novamente.",
             })
 
-            navigate('/')
-        } catch (error: any) {
+            navigate('/login')
+        } catch (error: unknown) {
             toast({
                 title: "Erro ao atualizar senha",
-                description: error.message,
+                description: error instanceof Error ? error.message : 'Não foi possível atualizar a senha.',
                 variant: "destructive",
             })
         } finally {

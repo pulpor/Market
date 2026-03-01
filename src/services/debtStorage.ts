@@ -1,10 +1,10 @@
-import { DebtsState, FinancingDebt } from "@/types/debt";
-import { supabase } from "@/lib/supabase";
+import { DebtsState, FinancingDebt, CardSpendingEntry, OtherDebt } from "@/types/debt";
+import { firebaseAuth, firestoreDb, isFirebaseConfigured } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 const BASE_STORAGE_KEY = "dashboard-b3-debts";
 
-// Untyped alias to avoid TS errors with non-existent tables in generated types
-const sb: any = supabase;
+const hasFirebase = isFirebaseConfigured;
 
 function getStorageKey(userId: string) {
   return `${BASE_STORAGE_KEY}-${userId}`;
@@ -12,38 +12,35 @@ function getStorageKey(userId: string) {
 
 export async function loadDebts(): Promise<DebtsState> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const uid = firebaseAuth?.currentUser?.uid;
+    if (!uid) return { financings: [], cardSpending: [], others: [] };
 
-    if (session?.user) {
-      const storageKey = getStorageKey(session.user.id);
+    const storageKey = getStorageKey(uid);
 
-      // 1. Tenta carregar do Supabase
+    // 1. Tenta carregar do Firestore
+    if (hasFirebase && firestoreDb) {
       try {
-        const { data, error } = await sb
-          .from('debts')
-          .select('content')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        if (data?.content) {
-          // Atualiza cache local do usuário
-          localStorage.setItem(storageKey, JSON.stringify(data.content));
-          return parseDebts(data.content);
+        const ref = doc(firestoreDb, 'users', uid, 'debts', 'state');
+        const snap = await getDoc(ref);
+        const content = snap.exists() ? (snap.data() as { content?: unknown })?.content : null;
+        if (content) {
+          localStorage.setItem(storageKey, JSON.stringify(content));
+          return parseDebts(content);
         }
       } catch (e) {
-        console.warn("Erro ao carregar dívidas do Supabase:", e);
+        console.warn("Erro ao carregar dívidas do Firestore:", e);
       }
+    }
 
-      // 2. Fallback para localStorage DO USUÁRIO
-      try {
-        const raw = localStorage.getItem(storageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          return parseDebts(parsed);
-        }
-      } catch (e) {
-        console.warn("Não foi possível carregar dívidas do localStorage", e);
+    // 2. Fallback para localStorage DO USUÁRIO
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return parseDebts(parsed);
       }
+    } catch (e) {
+      console.warn("Não foi possível carregar dívidas do localStorage", e);
     }
   } catch (e) {
     console.error("Erro geral em loadDebts:", e);
@@ -52,21 +49,22 @@ export async function loadDebts(): Promise<DebtsState> {
   return { financings: [], cardSpending: [], others: [] };
 }
 
-function parseDebts(parsed: any): DebtsState {
+function parseDebts(parsed: unknown): DebtsState {
   if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>
     // Migration: if 'financing' exists (old format), move it to 'financings' array
     let financings: FinancingDebt[] = [];
-    if (Array.isArray(parsed.financings)) {
-      financings = parsed.financings;
-    } else if (parsed.financing) {
-      financings = [parsed.financing];
+    if (Array.isArray(obj.financings)) {
+      financings = obj.financings as FinancingDebt[];
+    } else if (obj.financing) {
+      financings = [obj.financing as FinancingDebt];
     }
 
     return {
       financings,
-      cardSpending: Array.isArray(parsed.cardSpending) ? parsed.cardSpending : [],
-      monthlyTarget: typeof parsed.monthlyTarget === 'number' ? parsed.monthlyTarget : undefined,
-      others: Array.isArray(parsed.others) ? parsed.others : [],
+      cardSpending: Array.isArray(obj.cardSpending) ? (obj.cardSpending as CardSpendingEntry[]) : [],
+      monthlyTarget: typeof obj.monthlyTarget === 'number' ? (obj.monthlyTarget as number) : undefined,
+      others: Array.isArray(obj.others) ? (obj.others as OtherDebt[]) : [],
     };
   }
   return { financings: [], cardSpending: [], others: [] };
@@ -76,36 +74,33 @@ export async function saveDebts(state: DebtsState): Promise<boolean> {
   let saved = false;
 
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      const storageKey = getStorageKey(session.user.id);
+    const uid = firebaseAuth?.currentUser?.uid;
+    if (!uid) return false;
+    const storageKey = getStorageKey(uid);
 
-      // 1. Salva no localStorage (cache/backup) do usuário
+    // 1. Salva no localStorage (cache/backup) do usuário
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(state));
+      saved = true;
+    } catch (e) {
+      console.error("Erro ao salvar dívidas no localStorage", e);
+    }
+
+    // 2. Salva no Firestore
+    if (hasFirebase && firestoreDb) {
       try {
-        localStorage.setItem(storageKey, JSON.stringify(state));
+        const ref = doc(firestoreDb, 'users', uid, 'debts', 'state');
+        await setDoc(ref, {
+          content: state,
+          updated_at: new Date().toISOString(),
+        }, { merge: true });
         saved = true;
       } catch (e) {
-        console.error("Erro ao salvar dívidas no localStorage", e);
-      }
-
-      // 2. Salva no Supabase
-      const { error } = await sb
-        .from('debts')
-        .upsert({
-          user_id: session.user.id,
-          content: state,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
-
-      if (error) {
-        console.error("Erro ao salvar dívidas no Supabase:", error);
-      } else {
-        console.log("✅ Dívidas salvas no Supabase");
-        saved = true;
+        console.error("Erro ao salvar dívidas no Firestore:", e);
       }
     }
   } catch (e) {
-    console.error("Erro ao conectar com Supabase para salvar dívidas:", e);
+    console.error("Erro ao salvar dívidas:", e);
   }
 
   return saved;

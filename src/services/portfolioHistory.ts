@@ -1,4 +1,13 @@
-import { supabase } from "@/integrations/supabase/client";
+import { firebaseAuth, firestoreDb, isFirebaseConfigured } from "@/lib/firebase";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+} from "firebase/firestore";
 
 const BASE_LOCAL_KEY = "dashboard-b3-portfolio-history";
 
@@ -18,10 +27,7 @@ function toMonthKey(d: Date): string {
 }
 
 async function getUserId(): Promise<string | null> {
-  try {
-    const { data } = await supabase.auth.getUser();
-    return data.user?.id ?? null;
-  } catch { return null; }
+  return firebaseAuth?.currentUser?.uid ?? null;
 }
 
 export async function recordPortfolioSnapshot(value: number, when: Date = new Date()): Promise<void> {
@@ -33,17 +39,25 @@ export async function recordPortfolioSnapshot(value: number, when: Date = new Da
     try {
       // Local cache for instant UI
       const raw = localStorage.getItem(storageKey);
-      let map: Record<string, number> = raw ? JSON.parse(raw) : {};
+      const map: Record<string, number> = raw ? JSON.parse(raw) : {};
       map[key] = Number.isFinite(value) ? value : 0;
       localStorage.setItem(storageKey, JSON.stringify(map));
-    } catch { }
+    } catch {
+      /* ignore */
+    }
 
-    // Persist in Supabase
-    try {
-      await supabase
-        .from("portfolio_history")
-        .upsert({ user_id: userId, month: key, value }, { onConflict: "user_id,month" });
-    } catch { }
+    // Persist in Firestore
+    if (isFirebaseConfigured && firestoreDb) {
+      try {
+        await setDoc(doc(firestoreDb, 'users', userId, 'portfolio_history', key), {
+          month: key,
+          value,
+          updated_at: new Date().toISOString(),
+        }, { merge: true });
+      } catch {
+        /* ignore */
+      }
+    }
   }
 }
 
@@ -54,16 +68,24 @@ export async function updateMonthValue(month: string, value: number): Promise<vo
   const storageKey = getStorageKey(userId);
   try {
     const raw = localStorage.getItem(storageKey);
-    let map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
     map[month] = Number.isFinite(value) ? value : 0;
     localStorage.setItem(storageKey, JSON.stringify(map));
-  } catch { }
+  } catch {
+    /* ignore */
+  }
 
-  try {
-    await supabase
-      .from("portfolio_history")
-      .upsert({ user_id: userId, month, value }, { onConflict: "user_id,month" });
-  } catch { }
+  if (isFirebaseConfigured && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'users', userId, 'portfolio_history', month), {
+        month,
+        value,
+        updated_at: new Date().toISOString(),
+      }, { merge: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export async function deleteMonth(month: string): Promise<void> {
@@ -73,18 +95,20 @@ export async function deleteMonth(month: string): Promise<void> {
   const storageKey = getStorageKey(userId);
   try {
     const raw = localStorage.getItem(storageKey);
-    let map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
     delete map[month];
     localStorage.setItem(storageKey, JSON.stringify(map));
-  } catch { }
+  } catch {
+    /* ignore */
+  }
 
-  try {
-    await supabase
-      .from("portfolio_history")
-      .delete()
-      .eq("user_id", userId)
-      .eq("month", month);
-  } catch { }
+  if (isFirebaseConfigured && firestoreDb) {
+    try {
+      await deleteDoc(doc(firestoreDb, 'users', userId, 'portfolio_history', month));
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export async function addMonth(month: string, value: number): Promise<void> {
@@ -94,22 +118,30 @@ export async function addMonth(month: string, value: number): Promise<void> {
   const storageKey = getStorageKey(userId);
   try {
     const raw = localStorage.getItem(storageKey);
-    let map: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const map: Record<string, number> = raw ? JSON.parse(raw) : {};
     map[month] = Number.isFinite(value) ? value : 0;
     localStorage.setItem(storageKey, JSON.stringify(map));
-  } catch { }
+  } catch {
+    /* ignore */
+  }
 
-  try {
-    await supabase
-      .from("portfolio_history")
-      .upsert({ user_id: userId, month, value }, { onConflict: "user_id,month" });
-  } catch { }
+  if (isFirebaseConfigured && firestoreDb) {
+    try {
+      await setDoc(doc(firestoreDb, 'users', userId, 'portfolio_history', month), {
+        month,
+        value,
+        updated_at: new Date().toISOString(),
+      }, { merge: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 export async function getPortfolioHistory(userId?: string): Promise<PortfolioMonth[]> {
   if (!userId) return [];
 
-  // Primeiro tenta sincronizar do Supabase
+  // Primeiro tenta sincronizar do banco para o cache local
   await syncHistoryFromDBToLocal();
 
   const storageKey = getStorageKey(userId);
@@ -119,7 +151,9 @@ export async function getPortfolioHistory(userId?: string): Promise<PortfolioMon
     return Object.entries(map)
       .map(([month, value]) => ({ month, value }))
       .sort((a, b) => a.month.localeCompare(b.month));
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 export async function syncHistoryFromDBToLocal(): Promise<void> {
@@ -128,18 +162,28 @@ export async function syncHistoryFromDBToLocal(): Promise<void> {
     if (!userId) return;
 
     const storageKey = getStorageKey(userId);
-    const { data, error } = await supabase
-      .from("portfolio_history")
-      .select("month,value")
-      .eq("user_id", userId)
-      .order("month", { ascending: true });
+    if (!isFirebaseConfigured || !firestoreDb) return;
 
-    if (error || !data) return;
+    const q = query(
+      collection(firestoreDb, 'users', userId, 'portfolio_history'),
+      orderBy('month', 'asc'),
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return;
 
     const map: Record<string, number> = {};
-    for (const row of data) { map[row.month] = row.value; }
+    for (const row of snap.docs) {
+      const data = row.data() as { month?: unknown; value?: unknown };
+      const month = (typeof data?.month === 'string' ? data.month : row.id);
+      const value = data?.value;
+      if (typeof month === 'string') {
+        map[month] = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+      }
+    }
     localStorage.setItem(storageKey, JSON.stringify(map));
-  } catch { }
+  } catch {
+    /* ignore */
+  }
 }
 
 // Dados iniciais da planilha fornecida pelo usuário
@@ -163,7 +207,9 @@ export async function initializeWithUserData(): Promise<void> {
       '2025-04': 105954.32,
     };
     localStorage.setItem(storageKey, JSON.stringify(initialData));
-  } catch { }
+  } catch {
+    /* ignore */
+  }
 }
 
 export type PortfolioHistoryWithDiff = PortfolioMonth & { diff?: number; diffPct?: number };

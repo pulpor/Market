@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '@/lib/supabase'
+import { sendPasswordResetEmail } from 'firebase/auth'
+import { firebaseAuth, isFirebaseConfigured } from '@/lib/firebase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,21 +20,24 @@ export default function ForgotPassword() {
         setLoading(true)
 
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/reset-password`,
-            })
+            if (!isFirebaseConfigured || !firebaseAuth) {
+                throw new Error('Firebase não configurado. Configure as variáveis VITE_FIREBASE_* no .env.')
+            }
 
-            if (error) throw error
+            await sendPasswordResetEmail(firebaseAuth, email, {
+                url: `${window.location.origin}/reset-password`,
+                handleCodeInApp: true,
+            })
 
             setSubmitted(true)
             toast({
                 title: "Email enviado",
                 description: "Verifique sua caixa de entrada para redefinir a senha.",
             })
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({
                 title: "Erro ao enviar email",
-                description: error.message || "Ocorreu um erro ao tentar enviar o email.",
+                description: error instanceof Error ? error.message : "Ocorreu um erro ao tentar enviar o email.",
                 variant: "destructive",
             })
         } finally {

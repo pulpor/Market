@@ -1,11 +1,33 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { User, Session, AuthError } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+} from 'firebase/auth'
+import { firebaseAuth, isFirebaseConfigured } from '@/lib/firebase'
 import { toast } from '@/hooks/use-toast'
 
+function getErrorMessage(err: unknown): string {
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object' && 'message' in err) {
+    const maybeMsg = (err as { message?: unknown }).message
+    if (typeof maybeMsg === 'string') return maybeMsg
+  }
+  return ''
+}
+
+export type AuthUser = {
+  id: string
+  email?: string | null
+}
+
 interface AuthContextType {
-  user: User | null
-  session: Session | null
+  user: AuthUser | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
@@ -16,59 +38,59 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const isSupabaseConfigured = !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setLoading(false);
-      return;
+    if (!isFirebaseConfigured || !firebaseAuth) {
+      setLoading(false)
+      return
     }
 
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
+    // Completa fluxo de redirect (fallback do Google login) e mostra erro se houver.
+    getRedirectResult(firebaseAuth).catch((err: unknown) => {
+      const msg = getErrorMessage(err)
+      if (msg) {
+        toast({
+          title: 'Erro ao concluir login',
+          description: msg,
+          variant: 'destructive',
+        })
+      }
+    })
+
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (fbUser) => {
+      if (fbUser) {
+        setUser({ id: fbUser.uid, email: fbUser.email })
+      } else {
+        setUser(null)
+      }
       setLoading(false)
     })
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [isSupabaseConfigured])
+    return () => unsubscribe()
+  }, [])
 
   const signIn = async (email: string, password: string) => {
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured || !firebaseAuth) {
       toast({
         title: "Configuração necessária",
-        description: "Configure as chaves do Supabase no arquivo .env para fazer login.",
+        description: "Configure as chaves do Firebase no arquivo .env para fazer login.",
         variant: "destructive"
       });
       return;
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    if (error) {
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email, password)
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err)
       toast({
         title: 'Erro ao fazer login',
-        description: error.message,
+        description: msg || 'Não foi possível fazer login.',
         variant: 'destructive',
       })
-      throw error
+      throw err
     }
 
     toast({
@@ -78,114 +100,93 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signUp = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    if (!isFirebaseConfigured || !firebaseAuth) {
+      toast({
+        title: "Configuração necessária",
+        description: "Configure as chaves do Firebase no arquivo .env para criar conta.",
+        variant: "destructive"
+      })
+      return
+    }
 
-    if (error) {
-      let description = error.message
-      if (error.message.includes('User already registered') || error.message.includes('already registered')) {
-        description = 'Este email já está cadastrado. Tente fazer login ou recuperar sua senha.'
-      }
+    try {
+      await createUserWithEmailAndPassword(firebaseAuth, email, password)
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err)
+      const description = msg.includes('auth/email-already-in-use')
+        ? 'Este email já está cadastrado. Tente fazer login ou recuperar sua senha.'
+        : (msg || 'Não foi possível criar a conta.')
 
       toast({
         title: 'Erro ao criar conta',
         description,
         variant: 'destructive',
       })
-      throw error
+      throw err
     }
 
     toast({
       title: 'Conta criada',
-      description: 'Verifique seu email para confirmar o cadastro.',
+      description: 'Conta criada com sucesso.',
     })
   }
 
   const signOut = async () => {
-    if (!isSupabaseConfigured) {
-      setUser(null);
-      setSession(null);
-      return;
-    }
-    // Evita erro quando não há sessão ativa e força escopo local.
-    try {
-      const {
-        data: { session: currentSession },
-      } = await supabase.auth.getSession()
-
-      if (!currentSession) {
-        setUser(null)
-        setSession(null)
-        return
-      }
-
-      // Tenta uma saída "local" (não global). Se o backend recusar (403), seguimos limpando localmente.
-      const { error } = await supabase.auth.signOut({ scope: 'local' })
-      if (error) {
-        // Suaviza 403/AuthSessionMissing: limpa estado local mesmo assim.
-        console.warn('SignOut retornou erro, limpando sessão local mesmo assim:', error?.message)
-      }
-    } catch (err: any) {
-      // Suaviza AuthSessionMissingError e outros
-      console.warn('SignOut falhou, prosseguindo com limpeza local:', err?.message)
-    } finally {
-      // Limpeza local forçada do estado e possível token no storage
-      try {
-        const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
-        if (url) {
-          const projectRef = new URL(url).host.split('.')[0]
-          const possibleKeys = [
-            `sb-${projectRef}-auth-token`,
-            `sb-${projectRef}-auth-token.local`,
-          ]
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i) || ''
-            if (possibleKeys.some(pk => k.startsWith(pk))) {
-              try { localStorage.removeItem(k) } catch {}
-            }
-          }
-        }
-      } catch {}
-
+    if (!firebaseAuth) {
       setUser(null)
-      setSession(null)
+      return
+    }
 
+    try {
+      await firebaseSignOut(firebaseAuth)
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err)
+      console.warn('SignOut falhou, limpando estado local mesmo assim:', msg)
+    } finally {
+      setUser(null)
       toast({
         title: 'Logout realizado',
-        description: 'Sessão encerrada localmente.',
+        description: 'Sessão encerrada.',
       })
     }
   }
 
   const signInWithGoogle = async () => {
-    if (!isSupabaseConfigured) {
+    if (!isFirebaseConfigured || !firebaseAuth) {
       toast({
         title: "Modo Local",
-        description: "Login com Google não disponível sem configuração do Supabase.",
+        description: "Login com Google não disponível sem configuração do Firebase.",
         variant: "destructive"
       });
       return;
     }
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-      },
-    })
 
-    if (error) {
+    try {
+      const provider = new GoogleAuthProvider()
+      try {
+        await signInWithPopup(firebaseAuth, provider)
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err)
+        // Fallback para redirect quando popup é bloqueado/indisponível.
+        if (
+          msg.includes('auth/popup-blocked') ||
+          msg.includes('auth/popup-closed-by-user') ||
+          msg.includes('auth/cancelled-popup-request') ||
+          msg.includes('auth/operation-not-supported-in-this-environment')
+        ) {
+          await signInWithRedirect(firebaseAuth, provider)
+          return
+        }
+        throw err
+      }
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err)
       toast({
         title: 'Erro ao fazer login com Google',
-        description: error.message,
+        description: msg || 'Não foi possível fazer login com Google.',
         variant: 'destructive',
       })
-      throw error
+      throw err
     }
   }
 
@@ -193,7 +194,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        session,
         loading,
         signIn,
         signUp,

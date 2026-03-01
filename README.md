@@ -1,9 +1,9 @@
 # Market (Dashboard B3)
 
-Aplicação React + Vite + Tailwind que calcula e exibe sua carteira de ativos da B3 (alocação, DY e P/L da posição), usando Supabase Edge Functions para buscar cotações no Yahoo Finance. Em ambiente de desenvolvimento, há fallback automático para um mock local que funciona sem nenhuma configuração externa.
+Aplicação React + Vite + Tailwind que calcula e exibe sua carteira de ativos da B3 (alocação, DY e P/L da posição). A função de cálculo/consulta do Yahoo Finance roda como Function no Vercel em `/api/calculate-assets`.
 
 **✨ Novidade:**
-- IDs de ativos normalizados para UUID v4 (compatível com Supabase e entre dispositivos)
+- IDs de ativos normalizados para UUID v4 (compatível entre dispositivos)
 - Persistência local opcional em `assets.json` (privado, não vai pro Git)
 
 ## Requisitos
@@ -19,16 +19,18 @@ Aplicação React + Vite + Tailwind que calcula e exibe sua carteira de ativos d
 npm install
 ```
 
-### 2. (Opcional) Configure variáveis de ambiente no arquivo `.env` na raiz do projeto
+### 2. Configure variáveis de ambiente no arquivo `.env` na raiz do projeto (Firebase)
+
+O app usa Firebase Auth (login) + Firestore (persistência). Crie um projeto no Firebase e copie as chaves do Web App:
 
 ```
-VITE_SUPABASE_URL="https://<seu-project-id>.supabase.co"
-VITE_SUPABASE_PUBLISHABLE_KEY="<sua-anon-key>"
+VITE_FIREBASE_API_KEY="..."
+VITE_FIREBASE_AUTH_DOMAIN="..."
+VITE_FIREBASE_PROJECT_ID="..."
+VITE_FIREBASE_STORAGE_BUCKET="..."
+VITE_FIREBASE_MESSAGING_SENDER_ID="..."
+VITE_FIREBASE_APP_ID="..."
 ```
-
-Sem essas variáveis, o app usa automaticamente o mock local (sem chamadas externas) e funciona normalmente para testes.
-
-Para deploy em produção (Vercel recomendado) e passos completos de Supabase (tabela, função e variáveis), veja `DEPLOY.md`.
 
 ### 3. Inicie o servidor de armazenamento local (em um terminal)
 
@@ -58,22 +60,9 @@ Abra o navegador em http://localhost:8080.
 
 **Importante:** O arquivo `assets.json` NÃO é commitado no Git (privacidade). Há um `assets.json.example` vazio como referência.
 
-## Como funciona o fallback (mock)
+## Cálculo de ativos (Yahoo Finance)
 
-O serviço `src/services/yahooFinance.ts` tenta chamar a função Edge `calculate-assets` no Supabase. Se as variáveis `VITE_SUPABASE_URL` ou `VITE_SUPABASE_PUBLISHABLE_KEY` não estiverem definidas, ou se a chamada falhar, ele usa o `src/services/mockYahooFinance.ts`, gerando cotações e DY verossímeis (com cache em memória) para rodar sem dependências externas.
-
-## Deploy da função no Supabase (opcional)
-
-Com o CLI do Supabase instalado e autenticado:
-
-1. Ajuste `supabase/config.toml` e confirme o `project_id`.
-2. Faça o deploy da função Edge:
-
-```
-supabase functions deploy calculate-assets --project-ref <seu-project-id>
-```
-
-3. Nas variáveis do `.env`, coloque a `VITE_SUPABASE_URL` do seu projeto e a `VITE_SUPABASE_PUBLISHABLE_KEY` (anon key) para que o app consuma a função em produção/preview.
+O serviço `src/services/yahooFinance.ts` chama a rota `/api/calculate-assets`, que é uma Function em `api/calculate-assets.ts` (runtime edge). Isso elimina dependência de Supabase para as cotações.
 
 ## Scripts disponíveis
 
@@ -86,12 +75,11 @@ supabase functions deploy calculate-assets --project-ref <seu-project-id>
 ## Estrutura principal
 
 - `src/pages/Index.tsx` — tela principal (formulário, lista e gráficos)
-- `src/services/yahooFinance.ts` — integração Supabase + fallback para mock
-- `src/services/mockYahooFinance.ts` — mock local de cotações/DY
-- `src/services/fileStorage.ts` — funções de carga/salvamento do assets.json
+- `src/services/yahooFinance.ts` — client da rota `/api/calculate-assets`
+- `src/services/fileStorage.ts` — persistência de ativos no Firestore + backup localStorage
 - `server/storage-server.js` — servidor Express para persistência local
 - `assets.json` — seus ativos (ignorado pelo Git, privado)
-- `supabase/functions/calculate-assets` — função Edge que consulta Yahoo Finance
+- `api/calculate-assets.ts` — Function (Vercel) que consulta Yahoo Finance
 
 ## Observações
 

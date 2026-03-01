@@ -1,6 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/bcb-api/(.*)", "destination": "https://api.bcb.gov.br/dados/serie/bcdata.sgs.$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/bcb-api/(.*)", "dest": "https://api.bcb.gov.br/dados/serie/bcdata.sgs.$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
