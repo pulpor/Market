@@ -18,6 +18,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
 }
 
+console.log('[Firebase] Config:', {
+  apiKey: firebaseConfig.apiKey ? '***' : 'missing',
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+  appId: firebaseConfig.appId ? '***' : 'missing',
+})
+
 const requiredFirebaseEnv: Record<string, string | undefined> = {
   VITE_FIREBASE_API_KEY: firebaseConfig.apiKey,
   VITE_FIREBASE_AUTH_DOMAIN: firebaseConfig.authDomain,
