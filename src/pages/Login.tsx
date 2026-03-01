@@ -17,7 +17,9 @@ export default function Login() {
   // Importante para o fluxo Google via Redirect:
   // o usuário autentica, retorna para /login e precisa ser encaminhado.
   useEffect(() => {
+    console.log('[Login] useEffect: user=', user?.email || 'null', 'authLoading=', authLoading)
     if (user) {
+      console.log('[Login] User encontrado, navegando para /')
       navigate('/', { replace: true })
     }
   }, [user, navigate])

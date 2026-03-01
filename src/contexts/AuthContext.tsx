@@ -51,18 +51,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // o redirectResult chega antes do onAuthStateChanged estabilizar.
     ;(async () => {
       try {
+        console.log('[AuthContext] Iniciando getRedirectResult...')
         const result = await getRedirectResult(firebaseAuth)
         const redirectUser = result?.user
+        console.log('[AuthContext] getRedirectResult concluído. User:', redirectUser?.email || 'null')
         if (redirectUser) {
+          console.log('[AuthContext] Setando user:', redirectUser.email)
           setUser({ id: redirectUser.uid, email: redirectUser.email })
           setLoading(false)
+          console.log('[AuthContext] User setado e loading=false')
           toast({
             title: 'Login realizado',
             description: 'Bem-vindo de volta!',
           })
+        } else {
+          console.log('[AuthContext] getRedirectResult retornou null, aguardando onAuthStateChanged')
         }
       } catch (err: unknown) {
         const msg = getErrorMessage(err)
+        console.error('[AuthContext] Erro em getRedirectResult:', err, 'msg:', msg)
         if (msg) {
           toast({
             title: 'Erro ao concluir login',
