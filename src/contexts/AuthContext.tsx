@@ -47,17 +47,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Completa fluxo de redirect (fallback do Google login) e mostra erro se houver.
-    getRedirectResult(firebaseAuth).catch((err: unknown) => {
-      const msg = getErrorMessage(err)
-      if (msg) {
-        toast({
-          title: 'Erro ao concluir login',
-          description: msg,
-          variant: 'destructive',
-        })
+    // Completa fluxo de redirect (Google login). Em alguns ambientes,
+    // o redirectResult chega antes do onAuthStateChanged estabilizar.
+    ;(async () => {
+      try {
+        const result = await getRedirectResult(firebaseAuth)
+        const redirectUser = result?.user
+        if (redirectUser) {
+          setUser({ id: redirectUser.uid, email: redirectUser.email })
+          toast({
+            title: 'Login realizado',
+            description: 'Bem-vindo de volta!',
+          })
+        }
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err)
+        if (msg) {
+          toast({
+            title: 'Erro ao concluir login',
+            description: msg,
+            variant: 'destructive',
+          })
+        }
       }
-    })
+    })()
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, (fbUser) => {
       if (fbUser) {
