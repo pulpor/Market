@@ -32,4 +32,6 @@ assets.json
 *.njsproj
 *.sln
 *.sw?
-.vercel
+.vercel/
+.firebase/
+.env*.local

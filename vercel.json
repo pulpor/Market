@@ -1,15 +1,4 @@
 {
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "Cross-Origin-Opener-Policy",
-          "value": "same-origin-allow-popups"
-        }
-      ]
-    }
-  ],
   "routes": [
     { "handle": "filesystem" },
     { "src": "/bcb-api/(.*)", "dest": "https://api.bcb.gov.br/dados/serie/bcdata.sgs.$1" },
