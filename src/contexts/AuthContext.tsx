@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const redirectUser = result?.user
         if (redirectUser) {
           setUser({ id: redirectUser.uid, email: redirectUser.email })
+          setLoading(false)
           toast({
             title: 'Login realizado',
             description: 'Bem-vindo de volta!',

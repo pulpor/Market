@@ -17,10 +17,10 @@ export default function Login() {
   // Importante para o fluxo Google via Redirect:
   // o usuário autentica, retorna para /login e precisa ser encaminhado.
   useEffect(() => {
-    if (!authLoading && user) {
+    if (user) {
       navigate('/', { replace: true })
     }
-  }, [authLoading, user, navigate])
+  }, [user, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
