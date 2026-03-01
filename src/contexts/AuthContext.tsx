@@ -205,6 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const provider = new GoogleAuthProvider()
+      console.log('[AuthContext] signInWithGoogle iniciado')
 
       // Popups frequentemente falham em produção por políticas COOP/terceiros.
       // Então, no site online, use sempre Redirect (mais confiável).
@@ -213,22 +214,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
 
+      console.log('[AuthContext] isLocalDev:', isLocalDev, 'hostname:', window.location.hostname)
+
       if (!isLocalDev) {
+        console.log('[AuthContext] Produção: chamando signInWithRedirect...')
         await signInWithRedirect(firebaseAuth, provider)
+        console.log('[AuthContext] signInWithRedirect completado (página será redirecionada)')
         return
       }
 
       // Em localhost, popup é mais confortável; se falhar, cai pro redirect.
       try {
+        console.log('[AuthContext] Localhost: tentando signInWithPopup...')
         await signInWithPopup(firebaseAuth, provider)
+        console.log('[AuthContext] signInWithPopup sucesso')
       } catch (err: unknown) {
         const msg = getErrorMessage(err)
+        console.warn('[AuthContext] signInWithPopup falhou:', msg, 'caindo pro redirect...')
         if (
           msg.includes('auth/popup-blocked') ||
           msg.includes('auth/popup-closed-by-user') ||
           msg.includes('auth/cancelled-popup-request') ||
           msg.includes('auth/operation-not-supported-in-this-environment')
         ) {
+          console.log('[AuthContext] Localhost fallback: chamando signInWithRedirect...')
           await signInWithRedirect(firebaseAuth, provider)
           return
         }
@@ -236,6 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err: unknown) {
       const msg = getErrorMessage(err)
+      console.error('[AuthContext] signInWithGoogle erro final:', err)
       toast({
         title: 'Erro ao fazer login com Google',
         description: msg || 'Não foi possível fazer login com Google.',
