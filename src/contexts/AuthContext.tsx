@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const redirectUser = result?.user
         console.log('[AuthContext] getRedirectResult concluído. User:', redirectUser?.email || 'null')
         if (redirectUser) {
-          console.log('[AuthContext] Setando user:', redirectUser.email)
+          console.log('[AuthContext] Setando user (via redirectResult):', redirectUser.email)
           setUser({ id: redirectUser.uid, email: redirectUser.email })
           setLoading(false)
           console.log('[AuthContext] User setado e loading=false')
@@ -66,6 +66,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           })
         } else {
           console.log('[AuthContext] getRedirectResult retornou null, aguardando onAuthStateChanged')
+          // Fallback: se redirectResult for null, tenta pegar currentUser imediatamente
+          const currentUser = firebaseAuth.currentUser
+          if (currentUser) {
+            console.log('[AuthContext] Fallback: currentUser existe:', currentUser.email)
+            setUser({ id: currentUser.uid, email: currentUser.email })
+            setLoading(false)
+            toast({
+              title: 'Login realizado',
+              description: 'Bem-vindo de volta!',
+            })
+          }
         }
       } catch (err: unknown) {
         const msg = getErrorMessage(err)
