@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -11,8 +11,16 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const { signIn, signInWithGoogle } = useAuth()
+  const { user, loading: authLoading, signIn, signInWithGoogle } = useAuth()
   const navigate = useNavigate()
+
+  // Importante para o fluxo Google via Redirect:
+  // o usuário autentica, retorna para /login e precisa ser encaminhado.
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/', { replace: true })
+    }
+  }, [authLoading, user, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -105,6 +113,7 @@ export default function Login() {
             variant="outline"
             className="w-full"
             onClick={handleGoogleSignIn}
+            disabled={authLoading}
           >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
