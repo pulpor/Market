@@ -72,14 +72,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })()
 
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (fbUser) => {
-      if (fbUser) {
-        setUser({ id: fbUser.uid, email: fbUser.email })
-      } else {
-        setUser(null)
-      }
-      setLoading(false)
-    })
+    const unsubscribe = onAuthStateChanged(
+      firebaseAuth,
+      (fbUser) => {
+        if (fbUser) {
+          setUser({ id: fbUser.uid, email: fbUser.email })
+        } else {
+          setUser(null)
+        }
+        setLoading(false)
+      },
+      (err) => {
+        const msg = getErrorMessage(err)
+        console.error('onAuthStateChanged error:', err)
+        toast({
+          title: 'Erro no estado de autenticação',
+          description: msg || 'Falha ao acompanhar sessão do Firebase Auth.',
+          variant: 'destructive',
+        })
+        setLoading(false)
+      },
+    )
 
     return () => unsubscribe()
   }, [])

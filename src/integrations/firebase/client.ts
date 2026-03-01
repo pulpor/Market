@@ -2,6 +2,7 @@ import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import {
   getAuth,
   type Auth,
+  indexedDBLocalPersistence,
   browserLocalPersistence,
   inMemoryPersistence,
   setPersistence,
@@ -43,7 +44,8 @@ export const firestoreDb: Firestore | null = firebaseApp ? getFirestore(firebase
 // Avoid hard crashes in environments where storage access is blocked.
 // If persistence can't be set, Firebase falls back to default behavior.
 if (firebaseAuth) {
-  setPersistence(firebaseAuth, browserLocalPersistence).catch(() => {
-    setPersistence(firebaseAuth, inMemoryPersistence).catch(() => {})
-  })
+  setPersistence(firebaseAuth, indexedDBLocalPersistence)
+    .catch(() => setPersistence(firebaseAuth, browserLocalPersistence))
+    .catch(() => setPersistence(firebaseAuth, inMemoryPersistence))
+    .catch(() => {})
 }
