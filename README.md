@@ -62,7 +62,7 @@ Abra o navegador em http://localhost:8080.
 
 ## Cálculo de ativos (Yahoo Finance)
 
-O serviço `src/services/yahooFinance.ts` chama a rota `/api/calculate-assets`, que é uma Function em `api/calculate-assets.ts` (runtime edge). Isso elimina dependência de Supabase para as cotações.
+O serviço `src/services/yahooFinance.ts` chama a rota `/api/calculate-assets`, que é uma Function em `api/calculate-assets.ts` (runtime edge).
 
 ## Scripts disponíveis
 

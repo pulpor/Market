@@ -4,4 +4,5 @@ export {
   firebaseAuth,
   firestoreDb,
   isFirebaseConfigured,
+  missingFirebaseEnvKeys,
 } from '@/integrations/firebase/client'

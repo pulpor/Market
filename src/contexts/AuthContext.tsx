@@ -9,7 +9,7 @@ import {
   signInWithRedirect,
   getRedirectResult,
 } from 'firebase/auth'
-import { firebaseAuth, isFirebaseConfigured } from '@/lib/firebase'
+import { firebaseAuth, isFirebaseConfigured, missingFirebaseEnvKeys } from '@/lib/firebase'
 import { toast } from '@/hooks/use-toast'
 
 function getErrorMessage(err: unknown): string {
@@ -153,9 +153,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     if (!isFirebaseConfigured || !firebaseAuth) {
+      const missing = missingFirebaseEnvKeys.length
+        ? `Faltando: ${missingFirebaseEnvKeys.join(', ')}`
+        : 'Variáveis VITE_FIREBASE_* ausentes.'
+
       toast({
         title: "Modo Local",
-        description: "Login com Google não disponível sem configuração do Firebase.",
+        description:
+          `Firebase não configurado neste build. ${missing} Configure na Vercel (Settings → Environment Variables) e faça um Redeploy.`,
         variant: "destructive"
       });
       return;
@@ -163,6 +168,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const provider = new GoogleAuthProvider()
+
+      // Em produção (Vercel) ou quando o navegador usa isolamento cross-origin,
+      // o fluxo por popup pode falhar/travar por políticas COOP. Redirect é mais robusto.
+      const preferRedirect =
+        import.meta.env.PROD || (typeof window !== 'undefined' && window.crossOriginIsolated)
+
+      if (preferRedirect) {
+        await signInWithRedirect(firebaseAuth, provider)
+        return
+      }
+
       try {
         await signInWithPopup(firebaseAuth, provider)
       } catch (err: unknown) {

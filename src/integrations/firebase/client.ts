@@ -17,12 +17,18 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID as string | undefined,
 }
 
-export const isFirebaseConfigured = Boolean(
-  firebaseConfig.apiKey &&
-    firebaseConfig.authDomain &&
-    firebaseConfig.projectId &&
-    firebaseConfig.appId,
-)
+const requiredFirebaseEnv: Record<string, string | undefined> = {
+  VITE_FIREBASE_API_KEY: firebaseConfig.apiKey,
+  VITE_FIREBASE_AUTH_DOMAIN: firebaseConfig.authDomain,
+  VITE_FIREBASE_PROJECT_ID: firebaseConfig.projectId,
+  VITE_FIREBASE_APP_ID: firebaseConfig.appId,
+}
+
+export const missingFirebaseEnvKeys = Object.entries(requiredFirebaseEnv)
+  .filter(([, value]) => !value)
+  .map(([key]) => key)
+
+export const isFirebaseConfigured = missingFirebaseEnvKeys.length === 0
 
 function createFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseConfigured) return null
