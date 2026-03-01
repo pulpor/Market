@@ -32,3 +32,4 @@ assets.json
 *.njsproj
 *.sln
 *.sw?
+.vercel
