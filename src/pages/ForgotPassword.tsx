@@ -9,6 +9,32 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Mail, ArrowLeft, CheckCircle } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
+function getErrorCode(error: unknown): string {
+    if (error && typeof error === 'object' && 'code' in error) {
+        const code = (error as { code?: unknown }).code
+        if (typeof code === 'string') return code
+    }
+    return ''
+}
+
+function mapResetError(error: unknown): string {
+    const code = getErrorCode(error)
+    const message = error instanceof Error ? error.message : ''
+
+    switch (code) {
+        case 'auth/invalid-email':
+            return 'Email invalido. Confira o endereco informado.'
+        case 'auth/user-not-found':
+            return 'Nao encontramos conta com este email.'
+        case 'auth/too-many-requests':
+            return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+        case 'auth/network-request-failed':
+            return 'Falha de rede ao enviar email de recuperacao.'
+        default:
+            return message || 'Ocorreu um erro ao tentar enviar o email.'
+    }
+}
+
 export default function ForgotPassword() {
     const [email, setEmail] = useState('')
     const [loading, setLoading] = useState(false)
@@ -24,10 +50,9 @@ export default function ForgotPassword() {
                 throw new Error('Firebase não configurado. Configure as variáveis VITE_FIREBASE_* no .env.')
             }
 
-            await sendPasswordResetEmail(firebaseAuth, email, {
-                url: `${window.location.origin}/reset-password`,
-                handleCodeInApp: true,
-            })
+            // Usa o fluxo hospedado do proprio Firebase, que evita falhas por
+            // dominio/continueUrl em ambientes de deploy (Vercel preview/prod).
+            await sendPasswordResetEmail(firebaseAuth, email)
 
             setSubmitted(true)
             toast({
@@ -37,7 +62,7 @@ export default function ForgotPassword() {
         } catch (error: unknown) {
             toast({
                 title: "Erro ao enviar email",
-                description: error instanceof Error ? error.message : "Ocorreu um erro ao tentar enviar o email.",
+                description: mapResetError(error),
                 variant: "destructive",
             })
         } finally {

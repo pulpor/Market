@@ -12,6 +12,15 @@ import {
 import { firebaseAuth, isFirebaseConfigured, missingFirebaseEnvKeys } from '@/lib/firebase'
 import { toast } from '@/hooks/use-toast'
 
+function getAuthErrorCode(err: unknown): string {
+  if (!err || typeof err !== 'object') return ''
+  if ('code' in err) {
+    const maybeCode = (err as { code?: unknown }).code
+    if (typeof maybeCode === 'string') return maybeCode
+  }
+  return ''
+}
+
 function getErrorMessage(err: unknown): string {
   if (typeof err === 'string') return err
   if (err && typeof err === 'object' && 'message' in err) {
@@ -19,6 +28,66 @@ function getErrorMessage(err: unknown): string {
     if (typeof maybeMsg === 'string') return maybeMsg
   }
   return ''
+}
+
+function isLikelyProjectMismatch(): boolean {
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID
+  const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN
+
+  if (!projectId || !authDomain) return false
+
+  // Para domínios padrão do Firebase, o início costuma refletir o projectId.
+  if (authDomain.endsWith('.firebaseapp.com') && !authDomain.startsWith(`${projectId}.`)) {
+    return true
+  }
+
+  return false
+}
+
+function mapFirebaseAuthError(err: unknown, action: 'login' | 'signup' | 'google' | 'session'): string {
+  const code = getAuthErrorCode(err)
+  const rawMessage = getErrorMessage(err)
+
+  const fallbackByAction: Record<typeof action, string> = {
+    login: 'Nao foi possivel fazer login.',
+    signup: 'Nao foi possivel criar a conta.',
+    google: 'Nao foi possivel fazer login com Google.',
+    session: 'Falha ao validar sessao de autenticacao.',
+  }
+
+  switch (code) {
+    case 'auth/invalid-credential':
+      if (action === 'google') {
+        return 'Credencial invalida para login Google. Verifique se o provider Google esta habilitado no Firebase e se o dominio atual esta autorizado.'
+      }
+      return 'Email ou senha invalidos, ou as variaveis VITE_FIREBASE_* apontam para projeto Firebase diferente.'
+    case 'auth/invalid-api-key':
+      return 'API key do Firebase invalida. Revise VITE_FIREBASE_API_KEY na Vercel/.env e faca novo deploy.'
+    case 'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
+      return 'API key do Firebase invalida. Revise VITE_FIREBASE_API_KEY na Vercel/.env e faca novo deploy.'
+    case 'auth/unauthorized-domain':
+      return 'Dominio nao autorizado no Firebase Auth. Adicione o dominio atual em Authentication > Settings > Authorized domains.'
+    case 'auth/operation-not-allowed':
+      if (action === 'google') {
+        return 'Login com Google desabilitado no Firebase. Ative em Authentication > Sign-in method > Google.'
+      }
+      if (action === 'login') {
+        return 'Login por Email/Senha desabilitado no Firebase. Ative em Authentication > Sign-in method > Email/Password.'
+      }
+      return 'Metodo de autenticacao desabilitado no Firebase para esta operacao.'
+    case 'auth/user-disabled':
+      return 'Este usuario foi desativado no Firebase Auth.'
+    case 'auth/network-request-failed':
+      return 'Falha de rede ao falar com Firebase Auth. Verifique internet, VPN, proxy ou bloqueio no navegador.'
+    case 'auth/popup-blocked':
+      return 'Popup bloqueado pelo navegador. Permita popups ou tente novamente.'
+    case 'auth/popup-closed-by-user':
+      return 'Popup de login foi fechado antes de concluir autenticacao.'
+    case 'auth/account-exists-with-different-credential':
+      return 'Ja existe conta com este email usando outro metodo de login.'
+    default:
+      return rawMessage || fallbackByAction[action]
+  }
 }
 
 export type AuthUser = {
@@ -45,6 +114,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isFirebaseConfigured || !firebaseAuth) {
       setLoading(false)
       return
+    }
+
+    if (isLikelyProjectMismatch()) {
+      console.warn(
+        '[AuthContext] Possivel mismatch de projeto Firebase:',
+        'VITE_FIREBASE_PROJECT_ID=',
+        import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        'VITE_FIREBASE_AUTH_DOMAIN=',
+        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      )
     }
 
     // Completa fluxo de redirect (Google login). Em alguns ambientes,
@@ -79,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (err: unknown) {
-        const msg = getErrorMessage(err)
+        const msg = mapFirebaseAuthError(err, 'session')
         console.error('[AuthContext] Erro em getRedirectResult:', err, 'msg:', msg)
         if (msg) {
           toast({
@@ -105,11 +184,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false)
       },
       (err) => {
-        const msg = getErrorMessage(err)
+        const msg = mapFirebaseAuthError(err, 'session')
         console.error('[AuthContext] onAuthStateChanged error:', err)
         toast({
           title: 'Erro no estado de autenticação',
-          description: msg || 'Falha ao acompanhar sessão do Firebase Auth.',
+          description: msg,
           variant: 'destructive',
         })
         setLoading(false)
@@ -132,10 +211,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password)
     } catch (err: unknown) {
-      const msg = getErrorMessage(err)
+      const msg = mapFirebaseAuthError(err, 'login')
       toast({
         title: 'Erro ao fazer login',
-        description: msg || 'Não foi possível fazer login.',
+        description: msg,
         variant: 'destructive',
       })
       throw err
@@ -160,10 +239,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await createUserWithEmailAndPassword(firebaseAuth, email, password)
     } catch (err: unknown) {
-      const msg = getErrorMessage(err)
-      const description = msg.includes('auth/email-already-in-use')
+      const rawMsg = getErrorMessage(err)
+      const description = rawMsg.includes('auth/email-already-in-use')
         ? 'Este email já está cadastrado. Tente fazer login ou recuperar sua senha.'
-        : (msg || 'Não foi possível criar a conta.')
+        : mapFirebaseAuthError(err, 'signup')
 
       toast({
         title: 'Erro ao criar conta',
@@ -218,48 +297,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const provider = new GoogleAuthProvider()
       console.log('[AuthContext] signInWithGoogle iniciado')
 
-      // Popups frequentemente falham em produção por políticas COOP/terceiros.
-      // Então, no site online, use sempre Redirect (mais confiável).
-      const isLocalDev =
-        import.meta.env.DEV &&
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-
-      console.log('[AuthContext] isLocalDev:', isLocalDev, 'hostname:', window.location.hostname)
-
-      if (!isLocalDev) {
-        console.log('[AuthContext] Produção: chamando signInWithRedirect...')
-        await signInWithRedirect(firebaseAuth, provider)
-        console.log('[AuthContext] signInWithRedirect completado (página será redirecionada)')
-        return
-      }
-
-      // Em localhost, popup é mais confortável; se falhar, cai pro redirect.
+      // Tenta popup primeiro em qualquer ambiente (melhor UX e evita alguns
+      // problemas de redirect em browsers com bloqueios extras).
       try {
-        console.log('[AuthContext] Localhost: tentando signInWithPopup...')
+        console.log('[AuthContext] Tentando signInWithPopup... hostname:', window.location.hostname)
         await signInWithPopup(firebaseAuth, provider)
         console.log('[AuthContext] signInWithPopup sucesso')
       } catch (err: unknown) {
+        const code = getAuthErrorCode(err)
         const msg = getErrorMessage(err)
         console.warn('[AuthContext] signInWithPopup falhou:', msg, 'caindo pro redirect...')
         if (
-          msg.includes('auth/popup-blocked') ||
-          msg.includes('auth/popup-closed-by-user') ||
-          msg.includes('auth/cancelled-popup-request') ||
-          msg.includes('auth/operation-not-supported-in-this-environment')
+          code === 'auth/popup-blocked' ||
+          code === 'auth/popup-closed-by-user' ||
+          code === 'auth/cancelled-popup-request' ||
+          code === 'auth/operation-not-supported-in-this-environment' ||
+          code === 'auth/web-storage-unsupported'
         ) {
-          console.log('[AuthContext] Localhost fallback: chamando signInWithRedirect...')
+          console.log('[AuthContext] Fallback: chamando signInWithRedirect...')
           await signInWithRedirect(firebaseAuth, provider)
           return
         }
+
+        if (code === 'auth/unauthorized-domain') {
+          throw new Error(
+            `Dominio atual (${window.location.hostname}) nao autorizado no Firebase Auth. Adicione este dominio em Authentication > Settings > Authorized domains ou use o dominio principal da Vercel.`,
+          )
+        }
+
         throw err
       }
     } catch (err: unknown) {
-      const msg = getErrorMessage(err)
+      const msg = mapFirebaseAuthError(err, 'google')
       console.error('[AuthContext] signInWithGoogle erro final:', err)
       toast({
         title: 'Erro ao fazer login com Google',
-        description: msg || 'Não foi possível fazer login com Google.',
+        description: msg,
         variant: 'destructive',
       })
       throw err
