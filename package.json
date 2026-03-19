@@ -8,6 +8,7 @@
     "dev": "vite",
     "storage": "node server/storage-server.js",
     "realtime": "node server/realtime-collector.js",
+    "migrate:supabase:assets": "node scripts/migrate-supabase-assets-to-firebase.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
@@ -72,6 +73,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.53.0",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@types/node": "^22.16.5",
@@ -90,6 +92,7 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19"
+    "vite": "^5.4.19",
+    "firebase-admin": "^12.7.0"
   }
 }

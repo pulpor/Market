@@ -295,6 +295,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const provider = new GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
       console.log('[AuthContext] signInWithGoogle iniciado')
 
       // Tenta popup primeiro em qualquer ambiente (melhor UX e evita alguns

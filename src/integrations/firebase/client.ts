@@ -7,7 +7,7 @@ import {
   inMemoryPersistence,
   setPersistence,
 } from 'firebase/auth'
-import { getFirestore, type Firestore } from 'firebase/firestore'
+import { getFirestore, initializeFirestore, type Firestore } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string | undefined,
@@ -46,7 +46,24 @@ function createFirebaseApp(): FirebaseApp | null {
 
 export const firebaseApp = createFirebaseApp()
 export const firebaseAuth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null
-export const firestoreDb: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null
+
+function createFirestoreDb(): Firestore | null {
+  if (!firebaseApp) return null
+
+  // Em algumas redes/proxies (ou combinações de browser + extensões),
+  // o transporte padrão do Firestore pode falhar e cair em "client is offline".
+  // Este modo torna a conexão mais resiliente em produção.
+  try {
+    return initializeFirestore(firebaseApp, {
+      experimentalAutoDetectLongPolling: true,
+      useFetchStreams: false,
+    })
+  } catch {
+    return getFirestore(firebaseApp)
+  }
+}
+
+export const firestoreDb: Firestore | null = createFirestoreDb()
 
 // Avoid hard crashes in environments where storage access is blocked.
 // If persistence can't be set, Firebase falls back to default behavior.

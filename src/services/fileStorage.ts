@@ -18,6 +18,61 @@ function getStorageKey(userId: string) {
   return `${BASE_STORAGE_KEY}-${userId}`;
 }
 
+function normalizeAssetIds(list: Asset[]): Asset[] {
+  return list.map((a) => {
+    const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
+    return ok ? a : { ...a, id: uuidv4() };
+  });
+}
+
+function tryReadAssetsFromKey(storageKey: string): Asset[] {
+  const data = localStorage.getItem(storageKey);
+  if (!data) return [];
+
+  const parsed = JSON.parse(data);
+  if (!Array.isArray(parsed) || parsed.length === 0) return [];
+
+  return normalizeAssetIds(parsed as Asset[]);
+}
+
+function tryRecoverLegacyLocalAssets(currentStorageKey: string): Asset[] {
+  // Chave legada sem sufixo de usuário (versões antigas).
+  try {
+    const legacy = tryReadAssetsFromKey(BASE_STORAGE_KEY);
+    if (legacy.length > 0) {
+      localStorage.setItem(currentStorageKey, JSON.stringify(legacy));
+      return legacy;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Fallback: se existir apenas uma chave antiga por usuário neste navegador,
+  // reaproveita para o usuário atual.
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith(`${BASE_STORAGE_KEY}-`) && key !== currentStorageKey) {
+        keys.push(key);
+      }
+    }
+
+    if (keys.length === 1) {
+      const recovered = tryReadAssetsFromKey(keys[0]!);
+      if (recovered.length > 0) {
+        localStorage.setItem(currentStorageKey, JSON.stringify(recovered));
+        return recovered;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return [];
+}
+
 /**
  * Carrega os ativos do usuário logado no Firestore (se configurado),
  * com fallback para localStorage do usuário.
@@ -93,17 +148,11 @@ export async function loadAssets(): Promise<Asset[]> {
 
   // Fallback: localStorage DO USUÁRIO
   try {
-    const data = localStorage.getItem(storageKey);
-    if (data) {
-      const assets = JSON.parse(data);
-      if (Array.isArray(assets) && assets.length > 0) {
-        const fixed = assets.map((a: Asset) => {
-          const ok = typeof a.id === 'string' && uuidValidate(a.id) && uuidVersion(a.id) === 4;
-          return ok ? a : { ...a, id: uuidv4() };
-        });
-        return fixed;
-      }
-    }
+    const localAssets = tryReadAssetsFromKey(storageKey);
+    if (localAssets.length > 0) return localAssets;
+
+    const recoveredLegacyAssets = tryRecoverLegacyLocalAssets(storageKey);
+    if (recoveredLegacyAssets.length > 0) return recoveredLegacyAssets;
   } catch (error) {
     console.error("❌ Erro ao carregar do localStorage:", error);
   }
